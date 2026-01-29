@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
+import { authenticate, requireRole } from '../middleware/auth.js';
 import {
   discover,
   addDatasets,
@@ -12,8 +12,8 @@ import {
 const router = Router();
 
 // كل الـ routes تحتاج تسجيل دخول + صلاحية Admin
-router.use(authMiddleware);
-router.use(adminMiddleware);
+router.use(authenticate);
+router.use(requireRole('ADMIN'));
 
 /**
  * @route   GET /api/discovery/stats
@@ -24,7 +24,7 @@ router.get('/stats', stats);
 
 /**
  * @route   GET /api/discovery/discover
- * @desc    اكتشاف Datasets جديدة من الموقع (Puppeteer)
+ * @desc    اكتشاف Datasets جديدة من الموقع (Browserless.io)
  * @access  Admin
  */
 router.get('/discover', discover);
