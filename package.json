@@ -48,7 +48,6 @@
     "node-cron": "^3.0.3",
     "papaparse": "^5.4.1",
     "prisma": "^5.22.0",
-    "puppeteer": "^21.11.0",
     "typescript": "^5.7.3",
     "winston": "^3.17.0",
     "zod": "^3.24.1"
@@ -56,5 +55,8 @@
   "devDependencies": {
     "tsx": "^4.19.2",
     "vitest": "^2.1.8"
+  },
+  "optionalDependencies": {
+    "puppeteer": "^21.11.0"
   }
 }
