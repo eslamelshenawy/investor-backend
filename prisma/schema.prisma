@@ -1,0 +1,243 @@
+// Prisma Schema for Investor Radar
+// نظام رادار المستثمر - قاعدة البيانات
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// المستخدمين - Users
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  nameAr        String?   @map("name_ar")
+  avatar        String?
+  role          String    @default("USER")
+  isActive      Boolean   @default(true) @map("is_active")
+  emailVerified Boolean   @default(false) @map("email_verified")
+
+  // Relations
+  dashboards    Dashboard[]
+  favorites     Favorite[]
+  notifications Notification[]
+
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// لوحات البيانات المخصصة - Custom Dashboards
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Dashboard {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  name        String
+  nameAr      String?   @map("name_ar")
+  description String?
+  widgets     String    @default("[]")
+  layout      String    @default("{}")
+  isPublic    Boolean   @default(false) @map("is_public")
+
+  // Relations
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("dashboards")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// المفضلات - Favorites
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  itemType  String   @map("item_type")
+  itemId    String   @map("item_id")
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, itemType, itemId])
+  @@map("favorites")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// الإشارات الذكية - AI Signals
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Signal {
+  id           String    @id @default(cuid())
+  type         String
+  title        String
+  titleAr      String    @map("title_ar")
+  summary      String
+  summaryAr    String    @map("summary_ar")
+  details      String    @default("{}")
+  impactScore  Float     @map("impact_score")
+  confidence   Float
+  trend        String
+  dataSource   String    @map("data_source")
+  datasetId    String?   @map("dataset_id")
+  region       String?
+  sector       String?
+  isActive     Boolean   @default(true) @map("is_active")
+
+  createdAt    DateTime  @default(now()) @map("created_at")
+  expiresAt    DateTime? @map("expires_at")
+
+  @@map("signals")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// المحتوى التلقائي - AI Generated Content
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Content {
+  id           String    @id @default(cuid())
+  type         String
+  title        String
+  titleAr      String    @map("title_ar")
+  body         String
+  bodyAr       String    @map("body_ar")
+  excerpt      String?
+  excerptAr    String?   @map("excerpt_ar")
+  tags         String    @default("[]")
+  metadata     String    @default("{}")
+  status       String    @default("PUBLISHED")
+  viewCount    Int       @default(0) @map("view_count")
+
+  // Relations
+  datasetId    String?   @map("dataset_id")
+
+  generatedAt  DateTime  @default(now()) @map("generated_at")
+  publishedAt  DateTime? @map("published_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@map("content")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// مجموعات البيانات - Datasets
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Dataset {
+  id            String    @id @default(cuid())
+  externalId    String    @unique @map("external_id")
+  name          String
+  nameAr        String    @map("name_ar")
+  description   String?
+  descriptionAr String?   @map("description_ar")
+  category      String
+  source        String    @default("open.data.gov.sa")
+  sourceUrl     String?   @map("source_url")
+
+  // Data info
+  recordCount   Int       @default(0) @map("record_count")
+  columns       String    @default("[]")
+  dataPreview   String    @default("[]") @map("data_preview")
+
+  // Sync info
+  lastSyncAt    DateTime? @map("last_sync_at")
+  syncStatus    String    @default("PENDING") @map("sync_status")
+  syncError     String?   @map("sync_error")
+
+  isActive      Boolean   @default(true) @map("is_active")
+
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("datasets")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// بيانات الـ Dataset - Dataset Records
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model DataRecord {
+  id          String   @id @default(cuid())
+  datasetId   String   @map("dataset_id")
+  data        String
+  hash        String   // For deduplication
+
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([datasetId, hash])
+  @@map("data_records")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// سجل المزامنة - Sync Logs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model SyncLog {
+  id             String    @id @default(cuid())
+  datasetId      String?   @map("dataset_id")
+  jobType        String    @map("job_type")
+  status         String
+  recordsCount   Int       @default(0) @map("records_count")
+  newRecords     Int       @default(0) @map("new_records")
+  updatedRecords Int       @default(0) @map("updated_records")
+  duration       Int?      // milliseconds
+  error          String?
+  metadata       String    @default("{}")
+
+  startedAt      DateTime  @default(now()) @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+
+  @@map("sync_logs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// الإشعارات - Notifications
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  type      String
+  title     String
+  titleAr   String   @map("title_ar")
+  message   String
+  messageAr String   @map("message_ar")
+  data      String   @default("{}")
+  isRead    Boolean  @default(false) @map("is_read")
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("notifications")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// إعدادات النظام - System Settings
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  groupName String   @default("general") @map("group_name")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
