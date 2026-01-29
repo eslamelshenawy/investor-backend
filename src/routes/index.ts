@@ -8,6 +8,7 @@ import adminRoutes from './admin.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import entityRoutes from './entity.routes.js';
 import widgetRoutes from './widget.routes.js';
+import discoveryRoutes from './discovery.routes.js';
 
 const router = Router();
 
@@ -30,5 +31,6 @@ router.use('/admin', adminRoutes);
 router.use('/dashboards', dashboardRoutes);
 router.use('/entities', entityRoutes);
 router.use('/widgets', widgetRoutes);
+router.use('/discovery', discoveryRoutes);
 
 export default router;

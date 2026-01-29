@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { syncAllDatasets } from '../services/saudiDataSync.js';
 import { analyzeDatasets, generateDailySummary } from '../services/aiAnalysis.js';
 import { generateMarketReport, createGeneratedContent } from '../services/contentGeneration.js';
+import { findNewDatasets, addNewDatasets } from '../services/discovery.js';
 import { prisma } from '../services/database.js';
 import { logger } from '../utils/logger.js';
 
@@ -11,6 +12,7 @@ const jobStatus = {
   quickCheck: { running: false, lastRun: null as Date | null },
   aiAnalysis: { running: false, lastRun: null as Date | null, signalsGenerated: 0 },
   contentGen: { running: false, lastRun: null as Date | null, contentGenerated: 0 },
+  discovery: { running: false, lastRun: null as Date | null, newFound: 0 },
 };
 
 // Full data sync - every 6 hours (0 */6 * * *)
@@ -174,6 +176,45 @@ export function scheduleCacheRefresh() {
   logger.info('📅 Scheduled: Cache refresh (every 30 minutes)');
 }
 
+// Discovery - weekly on Sunday at 3 AM (0 3 * * 0)
+export function scheduleDiscovery() {
+  cron.schedule('0 3 * * 0', async () => {
+    if (jobStatus.discovery.running) {
+      logger.warn('Discovery already running, skipping...');
+      return;
+    }
+
+    jobStatus.discovery.running = true;
+    logger.info('⏰ Scheduled: Dataset discovery starting');
+
+    try {
+      // Discover new datasets
+      const result = await findNewDatasets();
+
+      if (result.newIds.length > 0) {
+        // Add new datasets to database
+        await addNewDatasets(result.newIds);
+        jobStatus.discovery.newFound = result.newIds.length;
+        logger.info(`⏰ Discovery completed: ${result.newIds.length} new datasets found and added`);
+
+        // Trigger sync for new datasets
+        logger.info('⏰ Triggering sync for new datasets...');
+        await syncAllDatasets();
+      } else {
+        jobStatus.discovery.newFound = 0;
+        logger.info('⏰ Discovery completed: No new datasets found');
+      }
+    } catch (error) {
+      logger.error('⏰ Discovery failed:', error);
+    } finally {
+      jobStatus.discovery.running = false;
+      jobStatus.discovery.lastRun = new Date();
+    }
+  });
+
+  logger.info('📅 Scheduled: Dataset discovery (weekly on Sunday at 3 AM)');
+}
+
 // Initialize all scheduled jobs
 export function initializeScheduler() {
   logger.info('🕐 Initializing job scheduler...');
@@ -183,6 +224,7 @@ export function initializeScheduler() {
   scheduleAIAnalysis();
   scheduleContentGeneration();
   scheduleCacheRefresh();
+  scheduleDiscovery();
 
   logger.info('✅ All jobs scheduled');
 }
@@ -250,10 +292,33 @@ export async function triggerContentGeneration() {
   }
 }
 
+export async function triggerDiscovery() {
+  if (jobStatus.discovery.running) {
+    throw new Error('Discovery already running');
+  }
+
+  jobStatus.discovery.running = true;
+
+  try {
+    const result = await findNewDatasets();
+
+    if (result.newIds.length > 0) {
+      await addNewDatasets(result.newIds);
+      jobStatus.discovery.newFound = result.newIds.length;
+    }
+
+    return result;
+  } finally {
+    jobStatus.discovery.running = false;
+    jobStatus.discovery.lastRun = new Date();
+  }
+}
+
 export default {
   initializeScheduler,
   getJobStatus,
   triggerFullSync,
   triggerAIAnalysis,
   triggerContentGeneration,
+  triggerDiscovery,
 };

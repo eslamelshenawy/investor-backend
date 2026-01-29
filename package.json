@@ -12,7 +12,8 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "sync": "tsx src/jobs/sync.ts",
+    "sync": "tsx src/jobs/runSync.ts",
+    "discover": "tsx src/jobs/runDiscovery.ts",
     "lint": "eslint src --ext .ts",
     "test": "vitest"
   },
@@ -47,6 +48,7 @@
     "node-cron": "^3.0.3",
     "papaparse": "^5.4.1",
     "prisma": "^5.22.0",
+    "puppeteer": "^21.11.0",
     "typescript": "^5.7.3",
     "winston": "^3.17.0",
     "zod": "^3.24.1"
