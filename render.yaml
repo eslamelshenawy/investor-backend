@@ -1,22 +1,18 @@
 services:
   - type: web
     name: investor-radar-api
-    runtime: node
-    region: frankfurt
-    plan: free
+    env: node
     buildCommand: npm install && npx prisma generate && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: "10000"
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
-        generateValue: true
-      - key: GEMINI_API_KEY
         sync: false
       - key: CORS_ORIGINS
-        sync: false
-      - key: REDIS_URL
         sync: false
