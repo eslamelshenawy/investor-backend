@@ -1,13 +1,11 @@
 /**
  * خدمة اكتشاف Datasets جديدة
- * Discovery Service - Find new datasets using API or Puppeteer
+ * Discovery Service - Uses Browserless.io for cloud Chrome
  */
 
-import axios from 'axios';
+import puppeteer from 'puppeteer-core';
 import { prisma } from './database.js';
 import { logger } from '../utils/logger.js';
-
-const API_BASE = 'https://open.data.gov.sa/data/api';
 
 interface DiscoveryResult {
   total: number;
@@ -16,73 +14,45 @@ interface DiscoveryResult {
   all: string[];
 }
 
+// Browserless.io connection
+const BROWSERLESS_URL = process.env.BROWSERLESS_URL || 'wss://chrome.browserless.io?token=';
+const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN || '';
+
 /**
- * اكتشاف Datasets من API (الطريقة الأساسية - أسرع وأكثر موثوقية)
+ * اكتشاف Datasets من الموقع باستخدام Browserless.io
  */
-async function discoverFromAPI(): Promise<string[]> {
-  logger.info('🔍 اكتشاف من API...');
+export async function discoverDatasets(): Promise<string[]> {
+  logger.info('🔍 بدء اكتشاف الـ Datasets...');
 
-  try {
-    // Try to get package list from CKAN API
-    const response = await axios.get(`${API_BASE}/3/action/package_list`, {
-      headers: {
-        'User-Agent': 'InvestorRadar/1.0',
-        Accept: 'application/json',
-      },
-      timeout: 30000,
-    });
-
-    if (response.data?.success && Array.isArray(response.data?.result)) {
-      const ids = response.data.result;
-      logger.info(`✅ تم اكتشاف ${ids.length} dataset من API`);
-      return ids;
-    }
-
-    return [];
-  } catch (error) {
-    logger.warn(`⚠️ API discovery failed: ${error instanceof Error ? error.message : 'Unknown'}`);
+  if (!BROWSERLESS_TOKEN) {
+    logger.error('❌ BROWSERLESS_TOKEN غير موجود - أضفه في Environment Variables');
     return [];
   }
-}
-
-/**
- * اكتشاف Datasets من الموقع باستخدام Puppeteer (اختياري - fallback)
- */
-async function discoverFromPuppeteer(): Promise<string[]> {
-  logger.info('🔍 محاولة اكتشاف بـ Puppeteer...');
 
   let browser;
   try {
-    // Dynamic import for puppeteer (optional dependency)
-    const puppeteer = await import('puppeteer');
-
-    logger.info('🌐 تشغيل المتصفح...');
-    browser = await puppeteer.default.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--single-process',
-      ],
+    logger.info('🌐 الاتصال بـ Browserless.io...');
+    browser = await puppeteer.connect({
+      browserWSEndpoint: `${BROWSERLESS_URL}${BROWSERLESS_TOKEN}`,
     });
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
     await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
 
     logger.info('📄 فتح صفحة الـ Datasets...');
     await page.goto('https://open.data.gov.sa/ar/datasets', {
       waitUntil: 'networkidle0',
-      timeout: 90000,
+      timeout: 60000,
     });
 
-    await new Promise((r) => setTimeout(r, 10000));
+    // Wait for page to load
+    await new Promise((r) => setTimeout(r, 5000));
 
     // Scroll to load all datasets
+    logger.info('📜 تحميل كل البيانات...');
     let previousHeight = 0;
     let scrollAttempts = 0;
     let noChangeCount = 0;
@@ -96,50 +66,28 @@ async function discoverFromPuppeteer(): Promise<string[]> {
       }
       previousHeight = currentHeight;
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 1500));
       scrollAttempts++;
     }
 
     // Extract IDs from page content
+    logger.info('🔎 استخراج الـ IDs...');
     const content = await page.content();
     const idMatches = content.match(/\/datasets\/view\/([a-f0-9-]{36})/gi) || [];
     const ids = [...new Set(idMatches.map((m) => m.replace('/datasets/view/', '')))];
 
-    logger.info(`✅ تم اكتشاف ${ids.length} dataset بـ Puppeteer`);
+    logger.info(`✅ تم اكتشاف ${ids.length} dataset`);
+
+    await page.close();
     return ids;
   } catch (error) {
-    logger.warn(`⚠️ Puppeteer غير متاح: ${error instanceof Error ? error.message : 'Not installed'}`);
+    logger.error(`❌ خطأ في الاكتشاف: ${error instanceof Error ? error.message : 'Unknown'}`);
     return [];
   } finally {
     if (browser) {
-      await browser.close();
+      browser.disconnect();
     }
   }
-}
-
-/**
- * اكتشاف Datasets (يستخدم API أولاً، ثم Puppeteer كـ fallback)
- */
-export async function discoverDatasets(): Promise<string[]> {
-  logger.info('🔍 بدء اكتشاف الـ Datasets...');
-
-  // Try API first (faster and more reliable)
-  let ids = await discoverFromAPI();
-
-  // If API returns few results, try Puppeteer as backup
-  if (ids.length < 10) {
-    logger.info('⚠️ API أعاد نتائج قليلة، جاري تجربة Puppeteer...');
-    const puppeteerIds = await discoverFromPuppeteer();
-    if (puppeteerIds.length > ids.length) {
-      ids = puppeteerIds;
-    }
-  }
-
-  if (ids.length === 0) {
-    logger.warn('⚠️ لم يتم اكتشاف أي datasets');
-  }
-
-  return ids;
 }
 
 /**
@@ -183,9 +131,12 @@ export async function findNewDatasets(): Promise<DiscoveryResult> {
 
   if (newIds.length > 0) {
     logger.info('🆕 الـ Datasets الجديدة:');
-    newIds.forEach((id, i) => {
+    newIds.slice(0, 10).forEach((id, i) => {
       logger.info(`   ${i + 1}. ${id}`);
     });
+    if (newIds.length > 10) {
+      logger.info(`   ... و ${newIds.length - 10} أخرى`);
+    }
 
     // Log discovery to database
     await prisma.syncLog.create({
@@ -197,7 +148,7 @@ export async function findNewDatasets(): Promise<DiscoveryResult> {
         metadata: JSON.stringify({
           total: discoveredIds.length,
           known: knownIds.size,
-          newIds,
+          newIds: newIds.slice(0, 50),
         }),
       },
     });
@@ -212,7 +163,7 @@ export async function findNewDatasets(): Promise<DiscoveryResult> {
 }
 
 /**
- * إضافة Datasets جديدة يدوياً
+ * إضافة Datasets جديدة
  */
 export async function addNewDatasets(datasetIds: string[]): Promise<number> {
   logger.info(`📝 إضافة ${datasetIds.length} dataset جديدة...`);
@@ -221,7 +172,6 @@ export async function addNewDatasets(datasetIds: string[]): Promise<number> {
 
   for (const externalId of datasetIds) {
     try {
-      // Check if already exists
       const existing = await prisma.dataset.findUnique({
         where: { externalId },
       });
@@ -240,7 +190,7 @@ export async function addNewDatasets(datasetIds: string[]): Promise<number> {
         logger.info(`   ➕ ${externalId}`);
       }
     } catch (error) {
-      logger.error(`   ❌ فشل إضافة ${externalId}: ${error instanceof Error ? error.message : 'Unknown'}`);
+      logger.error(`   ❌ فشل إضافة ${externalId}`);
     }
   }
 
@@ -249,7 +199,7 @@ export async function addNewDatasets(datasetIds: string[]): Promise<number> {
 }
 
 /**
- * الحصول على إحصائيات الاكتشاف
+ * إحصائيات الـ Datasets
  */
 export async function getDiscoveryStats() {
   const totalDatasets = await prisma.dataset.count();
@@ -280,6 +230,7 @@ export async function getDiscoveryStats() {
     records: totalRecords,
     lastDiscovery: lastDiscovery?.createdAt || null,
     lastDiscoveryResult: lastDiscovery?.metadata ? JSON.parse(lastDiscovery.metadata as string) : null,
+    browserlessConfigured: !!BROWSERLESS_TOKEN,
   };
 }
 
