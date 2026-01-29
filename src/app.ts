@@ -13,10 +13,20 @@ export function createApp(): Express {
   // Security middleware
   app.use(helmet());
 
-  // CORS
+  // CORS - يدعم عدة روابط للـ Frontend
   app.use(
     cors({
-      origin: config.frontendUrl,
+      origin: (origin, callback) => {
+        // السماح للطلبات بدون origin (مثل mobile apps أو Postman)
+        if (!origin) return callback(null, true);
+
+        // التحقق من القائمة المسموحة
+        if (config.corsOrigins.includes(origin) || config.corsOrigins.includes('*')) {
+          return callback(null, true);
+        }
+
+        callback(new Error('Not allowed by CORS'));
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],

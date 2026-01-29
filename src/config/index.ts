@@ -27,8 +27,11 @@ export const config = {
   openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
   aiProvider: process.env.AI_PROVIDER || 'openai',
 
-  // CORS
+  // CORS - يدعم عدة روابط مفصولة بفاصلة
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  corsOrigins: (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:3000')
+    .split(',')
+    .map(origin => origin.trim()),
 
   // Sync intervals (in milliseconds)
   sync: {
