@@ -215,7 +215,7 @@ export async function getDiscoveryStats() {
 
   const lastDiscovery = await prisma.syncLog.findFirst({
     where: { jobType: 'discovery' },
-    orderBy: { createdAt: 'desc' },
+    orderBy: { startedAt: 'desc' },
   });
 
   const totalRecords = await prisma.dataRecord.count();
@@ -228,7 +228,7 @@ export async function getDiscoveryStats() {
       failed: failedDatasets,
     },
     records: totalRecords,
-    lastDiscovery: lastDiscovery?.createdAt || null,
+    lastDiscovery: lastDiscovery?.startedAt || null,
     lastDiscoveryResult: lastDiscovery?.metadata ? JSON.parse(lastDiscovery.metadata as string) : null,
     browserlessConfigured: !!BROWSERLESS_TOKEN,
   };
