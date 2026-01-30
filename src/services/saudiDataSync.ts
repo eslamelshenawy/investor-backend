@@ -42,7 +42,7 @@ interface DatasetApiResponse {
 
 interface ResourceInfo {
   format?: string;
-  url?: string;
+  downloadUrl?: string;
   name?: string;
 }
 
@@ -162,15 +162,15 @@ export async function syncDatasetMetadata(externalId: string): Promise<SyncResul
     // 2. Get resources to find CSV and estimate record count
     const resources = await fetchDatasetResources(externalId);
     const csvResource = resources.find(
-      (r) => r.format?.toLowerCase() === 'csv' || r.url?.endsWith('.csv')
+      (r) => r.format?.toLowerCase() === 'csv' || r.downloadUrl?.endsWith('.csv')
     );
 
     let recordCount = 0;
     let columns: string[] = [];
 
-    if (csvResource?.url) {
+    if (csvResource?.downloadUrl) {
       // Just estimate record count, don't download full file
-      recordCount = await getRecordCountFromCSV(csvResource.url);
+      recordCount = await getRecordCountFromCSV(csvResource.downloadUrl);
     }
 
     // 3. Extract category

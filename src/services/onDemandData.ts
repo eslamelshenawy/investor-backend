@@ -28,7 +28,7 @@ export interface DatasetResource {
   id: string;
   name: string;
   format: string;
-  url: string;
+  downloadUrl: string;
   size?: number;
 }
 
@@ -227,16 +227,16 @@ export async function getDatasetData(
 
     // 2. Find CSV resource
     const csvResource = resources.find(
-      (r) => r.format?.toLowerCase() === 'csv' || r.url?.endsWith('.csv')
+      (r) => r.format?.toLowerCase() === 'csv' || r.downloadUrl?.endsWith('.csv')
     );
 
-    if (!csvResource?.url) {
+    if (!csvResource?.downloadUrl) {
       logger.warn(`⚠️ No CSV resource found for dataset ${datasetId}`);
       return null;
     }
 
     // 3. Fetch CSV data
-    const records = await fetchCSVData(csvResource.url);
+    const records = await fetchCSVData(csvResource.downloadUrl);
 
     if (records.length === 0) {
       return null;
