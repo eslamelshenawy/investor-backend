@@ -2,9 +2,12 @@ import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import {
   discover,
+  discoverAll,
+  getCategories,
   addDatasets,
   stats,
   discoverAndSync,
+  fullDiscoverAndSync,
   syncAll,
   syncOne,
 } from '../controllers/discovery.controller.js';
@@ -23,11 +26,26 @@ router.use(requireRole('ADMIN'));
 router.get('/stats', stats);
 
 /**
+ * @route   GET /api/discovery/categories
+ * @desc    الحصول على قائمة الأقسام المتاحة (38 قسم)
+ * @access  Admin
+ */
+router.get('/categories', getCategories);
+
+/**
  * @route   GET /api/discovery/discover
- * @desc    اكتشاف Datasets جديدة من الموقع (Browserless.io)
+ * @desc    اكتشاف سريع - الصفحة الرئيسية فقط (Browserless.io)
  * @access  Admin
  */
 router.get('/discover', discover);
+
+/**
+ * @route   GET /api/discovery/discover-all
+ * @desc    اكتشاف شامل - كل الأقسام (قد يستغرق وقت طويل!)
+ * @access  Admin
+ * @note    يمسح كل الـ 38 قسم للعثور على كل الـ 15,500+ dataset
+ */
+router.get('/discover-all', discoverAll);
 
 /**
  * @route   POST /api/discovery/add
@@ -39,14 +57,23 @@ router.post('/add', addDatasets);
 
 /**
  * @route   POST /api/discovery/discover-and-sync
- * @desc    اكتشاف ومزامنة - العملية الكاملة
+ * @desc    اكتشاف ومزامنة (سريع أو شامل)
+ * @body    { fullDiscovery?: boolean } - اختياري، true للاكتشاف الشامل
  * @access  Admin
  */
 router.post('/discover-and-sync', discoverAndSync);
 
 /**
+ * @route   POST /api/discovery/full-discover-and-sync
+ * @desc    اكتشاف شامل ومزامنة - العملية الكاملة
+ * @access  Admin
+ * @warning قد يستغرق ساعات!
+ */
+router.post('/full-discover-and-sync', fullDiscoverAndSync);
+
+/**
  * @route   POST /api/discovery/sync-all
- * @desc    مزامنة كل الـ Datasets
+ * @desc    مزامنة كل الـ Datasets الموجودة
  * @access  Admin
  */
 router.post('/sync-all', syncAll);
