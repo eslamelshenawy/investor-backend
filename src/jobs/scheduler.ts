@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { syncAllDatasets } from '../services/saudiDataSync.js';
 import { analyzeDatasets, generateDailySummary } from '../services/aiAnalysis.js';
 import { generateMarketReport, createGeneratedContent } from '../services/contentGeneration.js';
-import { findNewDatasets, addNewDatasets } from '../services/discovery.js';
+import { findNewDatasets, addNewDatasets, SAUDI_DATA_CATEGORIES } from '../services/discovery.js';
 import { prisma } from '../services/database.js';
 import { logger } from '../utils/logger.js';
 
@@ -13,6 +13,7 @@ const jobStatus = {
   aiAnalysis: { running: false, lastRun: null as Date | null, signalsGenerated: 0 },
   contentGen: { running: false, lastRun: null as Date | null, contentGenerated: 0 },
   discovery: { running: false, lastRun: null as Date | null, newFound: 0 },
+  fullDiscovery: { running: false, lastRun: null as Date | null, newFound: 0, categoriesScanned: 0 },
 };
 
 // Full data sync - every 6 hours (0 */6 * * *)
@@ -176,7 +177,7 @@ export function scheduleCacheRefresh() {
   logger.info('📅 Scheduled: Cache refresh (every 30 minutes)');
 }
 
-// Discovery - weekly on Sunday at 3 AM (0 3 * * 0)
+// Quick Discovery - weekly on Sunday at 3 AM (0 3 * * 0)
 export function scheduleDiscovery() {
   cron.schedule('0 3 * * 0', async () => {
     if (jobStatus.discovery.running) {
@@ -185,34 +186,84 @@ export function scheduleDiscovery() {
     }
 
     jobStatus.discovery.running = true;
-    logger.info('⏰ Scheduled: Dataset discovery starting');
+    logger.info('⏰ Scheduled: Quick dataset discovery starting');
 
     try {
-      // Discover new datasets
-      const result = await findNewDatasets();
+      // Quick discover (main page only)
+      const result = await findNewDatasets(false);
 
       if (result.newIds.length > 0) {
         // Add new datasets to database
         await addNewDatasets(result.newIds);
         jobStatus.discovery.newFound = result.newIds.length;
-        logger.info(`⏰ Discovery completed: ${result.newIds.length} new datasets found and added`);
+        logger.info(`⏰ Quick discovery completed: ${result.newIds.length} new datasets found and added`);
 
         // Trigger sync for new datasets
         logger.info('⏰ Triggering sync for new datasets...');
         await syncAllDatasets();
       } else {
         jobStatus.discovery.newFound = 0;
-        logger.info('⏰ Discovery completed: No new datasets found');
+        logger.info('⏰ Quick discovery completed: No new datasets found');
       }
     } catch (error) {
-      logger.error('⏰ Discovery failed:', error);
+      logger.error('⏰ Quick discovery failed:', error);
     } finally {
       jobStatus.discovery.running = false;
       jobStatus.discovery.lastRun = new Date();
     }
   });
 
-  logger.info('📅 Scheduled: Dataset discovery (weekly on Sunday at 3 AM)');
+  logger.info('📅 Scheduled: Quick dataset discovery (weekly on Sunday at 3 AM)');
+}
+
+// Full Discovery - monthly on 1st at 2 AM (0 2 1 * *)
+// Scans ALL categories to find ALL 15,500+ datasets
+export function scheduleFullDiscovery() {
+  cron.schedule('0 2 1 * *', async () => {
+    if (jobStatus.fullDiscovery.running || jobStatus.discovery.running) {
+      logger.warn('Discovery already running, skipping full discovery...');
+      return;
+    }
+
+    jobStatus.fullDiscovery.running = true;
+    logger.info('═══════════════════════════════════════════════════════');
+    logger.info('⏰ Scheduled: FULL dataset discovery starting');
+    logger.info(`📊 Scanning ${SAUDI_DATA_CATEGORIES.length} categories`);
+    logger.info('⚠️ This may take several hours!');
+    logger.info('═══════════════════════════════════════════════════════');
+
+    try {
+      // Full discover (all categories)
+      const result = await findNewDatasets(true);
+
+      jobStatus.fullDiscovery.categoriesScanned = SAUDI_DATA_CATEGORIES.length;
+
+      if (result.newIds.length > 0) {
+        // Add new datasets to database
+        await addNewDatasets(result.newIds);
+        jobStatus.fullDiscovery.newFound = result.newIds.length;
+        logger.info(`⏰ Full discovery completed: ${result.newIds.length} new datasets found and added`);
+
+        // Trigger sync for new datasets
+        logger.info('⏰ Triggering sync for new datasets...');
+        await syncAllDatasets();
+      } else {
+        jobStatus.fullDiscovery.newFound = 0;
+        logger.info('⏰ Full discovery completed: No new datasets found');
+      }
+
+      logger.info('═══════════════════════════════════════════════════════');
+      logger.info('✅ Full discovery job completed');
+      logger.info('═══════════════════════════════════════════════════════');
+    } catch (error) {
+      logger.error('⏰ Full discovery failed:', error);
+    } finally {
+      jobStatus.fullDiscovery.running = false;
+      jobStatus.fullDiscovery.lastRun = new Date();
+    }
+  });
+
+  logger.info('📅 Scheduled: FULL dataset discovery (monthly on 1st at 2 AM - scans all categories)');
 }
 
 // Initialize all scheduled jobs
@@ -225,8 +276,10 @@ export function initializeScheduler() {
   scheduleContentGeneration();
   scheduleCacheRefresh();
   scheduleDiscovery();
+  scheduleFullDiscovery();
 
   logger.info('✅ All jobs scheduled');
+  logger.info(`📊 Available categories for full discovery: ${SAUDI_DATA_CATEGORIES.length}`);
 }
 
 // Get job status
@@ -300,7 +353,7 @@ export async function triggerDiscovery() {
   jobStatus.discovery.running = true;
 
   try {
-    const result = await findNewDatasets();
+    const result = await findNewDatasets(false);
 
     if (result.newIds.length > 0) {
       await addNewDatasets(result.newIds);
@@ -314,6 +367,39 @@ export async function triggerDiscovery() {
   }
 }
 
+// Trigger full discovery manually (all categories)
+export async function triggerFullDiscovery() {
+  if (jobStatus.fullDiscovery.running || jobStatus.discovery.running) {
+    throw new Error('Discovery already running');
+  }
+
+  jobStatus.fullDiscovery.running = true;
+
+  try {
+    logger.info('═══════════════════════════════════════════════════════');
+    logger.info('🔍 Manual: FULL dataset discovery starting');
+    logger.info(`📊 Scanning ${SAUDI_DATA_CATEGORIES.length} categories`);
+    logger.info('═══════════════════════════════════════════════════════');
+
+    const result = await findNewDatasets(true);
+
+    jobStatus.fullDiscovery.categoriesScanned = SAUDI_DATA_CATEGORIES.length;
+
+    if (result.newIds.length > 0) {
+      await addNewDatasets(result.newIds);
+      jobStatus.fullDiscovery.newFound = result.newIds.length;
+    }
+
+    return {
+      ...result,
+      categoriesScanned: SAUDI_DATA_CATEGORIES.length,
+    };
+  } finally {
+    jobStatus.fullDiscovery.running = false;
+    jobStatus.fullDiscovery.lastRun = new Date();
+  }
+}
+
 export default {
   initializeScheduler,
   getJobStatus,
@@ -321,4 +407,5 @@ export default {
   triggerAIAnalysis,
   triggerContentGeneration,
   triggerDiscovery,
+  triggerFullDiscovery,
 };
