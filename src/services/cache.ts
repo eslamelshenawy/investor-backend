@@ -9,12 +9,30 @@ export function getRedis(): Redis | null {
 }
 
 export async function connectRedis(): Promise<void> {
+  if (!config.redisUrl) {
+    logger.warn('⚠️ REDIS_URL not configured, caching disabled');
+    return;
+  }
+
   try {
     redis = new Redis(config.redisUrl, {
-      maxRetriesPerRequest: 3,
+      maxRetriesPerRequest: null, // Disable retry limit for Upstash
+      enableReadyCheck: false,
       retryStrategy(times) {
-        const delay = Math.min(times * 50, 2000);
+        if (times > 10) {
+          logger.warn('⚠️ Redis max retries reached, disabling cache');
+          return null; // Stop retrying
+        }
+        const delay = Math.min(times * 100, 3000);
         return delay;
+      },
+      reconnectOnError(err) {
+        // Only reconnect on specific errors
+        const targetError = 'READONLY';
+        if (err.message.includes(targetError)) {
+          return true;
+        }
+        return false;
       },
     });
 
@@ -23,13 +41,27 @@ export async function connectRedis(): Promise<void> {
     });
 
     redis.on('error', (err) => {
-      logger.error('❌ Redis error:', err);
+      // Don't log every error to avoid spam
+      if (!err.message.includes('MaxRetriesPerRequest')) {
+        logger.error(`Redis error: ${err.message}`);
+      }
     });
 
-    // Test connection
-    await redis.ping();
+    redis.on('close', () => {
+      logger.warn('⚠️ Redis connection closed');
+    });
+
+    // Test connection with timeout
+    const pingResult = await Promise.race([
+      redis.ping(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Ping timeout')), 5000))
+    ]);
+
+    if (pingResult === 'PONG') {
+      logger.info('✅ Redis ping successful');
+    }
   } catch (error) {
-    logger.warn('⚠️ Redis connection failed, caching disabled:', error);
+    logger.warn('⚠️ Redis connection failed, caching disabled');
     redis = null;
   }
 }
