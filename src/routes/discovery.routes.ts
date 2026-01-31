@@ -54,6 +54,26 @@ router.post('/start-quick', discoverAndSync);
  */
 router.post('/cleanup', cleanupInvalidDatasets);
 
+/**
+ * @route   POST /api/discovery/prefetch
+ * @desc    جلب البيانات مسبقاً وتخزينها في Cache (بدون Auth - للاختبار)
+ * @access  Public
+ */
+router.post('/prefetch', async (req, res) => {
+  try {
+    const { limit = 30 } = req.body;
+    const { triggerPreFetch } = await import('../jobs/scheduler.js');
+    const result = await triggerPreFetch(limit);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Pre-fetch failed',
+      errorAr: 'فشل جلب البيانات المسبق'
+    });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════
 // Protected Routes (تحتاج Auth + Admin)
 // ═══════════════════════════════════════════════════════════════════

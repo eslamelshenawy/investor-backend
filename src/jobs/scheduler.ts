@@ -3,6 +3,7 @@ import { syncAllDatasets } from '../services/saudiDataSync.js';
 import { analyzeDatasets, generateDailySummary } from '../services/aiAnalysis.js';
 import { generateMarketReport, createGeneratedContent } from '../services/contentGeneration.js';
 import { findNewDatasets, addNewDatasets, SAUDI_DATA_CATEGORIES } from '../services/discovery.js';
+import { preFetchTopDatasets } from '../services/dataPreFetch.js';
 import { prisma } from '../services/database.js';
 import { logger } from '../utils/logger.js';
 
@@ -14,6 +15,7 @@ const jobStatus = {
   contentGen: { running: false, lastRun: null as Date | null, contentGenerated: 0 },
   discovery: { running: false, lastRun: null as Date | null, newFound: 0 },
   fullDiscovery: { running: false, lastRun: null as Date | null, newFound: 0, categoriesScanned: 0 },
+  preFetch: { running: false, lastRun: null as Date | null, success: 0, failed: 0 },
 };
 
 // Full data sync - every 6 hours (0 */6 * * *)
@@ -177,6 +179,37 @@ export function scheduleCacheRefresh() {
   logger.info('📅 Scheduled: Cache refresh (every 30 minutes)');
 }
 
+// Data Pre-Fetch - every 2 hours (0 */2 * * *)
+// جلب البيانات مسبقاً وتخزينها في Redis
+export function scheduleDataPreFetch() {
+  cron.schedule('0 */2 * * *', async () => {
+    if (jobStatus.preFetch.running) {
+      logger.warn('Pre-fetch already running, skipping...');
+      return;
+    }
+
+    jobStatus.preFetch.running = true;
+    logger.info('⏰ Scheduled: Data pre-fetch starting');
+
+    try {
+      // Pre-fetch top 30 datasets
+      const result = await preFetchTopDatasets(30);
+
+      jobStatus.preFetch.success = result.success;
+      jobStatus.preFetch.failed = result.failed;
+
+      logger.info(`⏰ Pre-fetch completed: ${result.success} success, ${result.failed} failed`);
+    } catch (error) {
+      logger.error('⏰ Pre-fetch failed:', error);
+    } finally {
+      jobStatus.preFetch.running = false;
+      jobStatus.preFetch.lastRun = new Date();
+    }
+  });
+
+  logger.info('📅 Scheduled: Data pre-fetch (every 2 hours)');
+}
+
 // Quick Discovery - weekly on Sunday at 3 AM (0 3 * * 0)
 export function scheduleDiscovery() {
   cron.schedule('0 3 * * 0', async () => {
@@ -277,6 +310,7 @@ export function initializeScheduler() {
   scheduleCacheRefresh();
   scheduleDiscovery();
   scheduleFullDiscovery();
+  scheduleDataPreFetch();
 
   logger.info('✅ All jobs scheduled');
   logger.info(`📊 Available categories for full discovery: ${SAUDI_DATA_CATEGORIES.length}`);
@@ -400,6 +434,25 @@ export async function triggerFullDiscovery() {
   }
 }
 
+// Trigger pre-fetch manually
+export async function triggerPreFetch(limit: number = 30) {
+  if (jobStatus.preFetch.running) {
+    throw new Error('Pre-fetch already running');
+  }
+
+  jobStatus.preFetch.running = true;
+
+  try {
+    const result = await preFetchTopDatasets(limit);
+    jobStatus.preFetch.success = result.success;
+    jobStatus.preFetch.failed = result.failed;
+    return result;
+  } finally {
+    jobStatus.preFetch.running = false;
+    jobStatus.preFetch.lastRun = new Date();
+  }
+}
+
 export default {
   initializeScheduler,
   getJobStatus,
@@ -408,4 +461,5 @@ export default {
   triggerContentGeneration,
   triggerDiscovery,
   triggerFullDiscovery,
+  triggerPreFetch,
 };
