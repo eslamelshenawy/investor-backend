@@ -1,8 +1,12 @@
 /**
- * خدمة اكتشاف Datasets جديدة - النسخة المحسنة
- * Enhanced Discovery Service - Supports ALL categories and pagination
+ * خدمة اكتشاف Datasets جديدة - النسخة المحسنة v3
+ * Enhanced Discovery Service v3 - Full Pagination Support
  *
- * يدعم جلب كل الـ 15,500+ dataset من منصة البيانات المفتوحة السعودية
+ * التحسينات في v3:
+ * - دعم كامل للـ Pagination بالـ URL (?page=1, ?page=2, ...)
+ * - اكتشاف كل الأقسام مع pagination لكل قسم
+ * - اعتراض طلبات الشبكة للعثور على API الداخلي
+ * - يجلب كل الـ 15,500+ dataset من منصة البيانات المفتوحة السعودية
  */
 
 import puppeteer from 'puppeteer-core';
@@ -35,6 +39,14 @@ interface DiscoveryProgress {
   total: number;
 }
 
+interface DatasetFromAPI {
+  id: string;
+  titleAr?: string;
+  titleEn?: string;
+  category?: string;
+  organization?: string;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Configuration
 // ═══════════════════════════════════════════════════════════════════
@@ -46,10 +58,10 @@ const BASE_URL = 'https://open.data.gov.sa';
 const DATASETS_URL = `${BASE_URL}/ar/datasets`;
 
 // تأخير بين الطلبات لتجنب الحظر
-const REQUEST_DELAY = 2000;
-const PAGE_LOAD_TIMEOUT = 60000;
-const MAX_SCROLL_ATTEMPTS = 100; // زيادة عدد المحاولات
-const MAX_PAGES_PER_CATEGORY = 500; // أقصى عدد صفحات لكل قسم
+const REQUEST_DELAY = 3000;
+const PAGE_LOAD_TIMEOUT = 90000;
+const SCROLL_DELAY = 2000;
+const MAX_SCROLL_ATTEMPTS = 200; // زيادة كبيرة لجلب المزيد
 
 // ═══════════════════════════════════════════════════════════════════
 // قائمة كل الأقسام المتاحة في منصة البيانات المفتوحة السعودية
@@ -106,9 +118,102 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * استخراج Dataset IDs من المحتوى HTML
+ */
 function extractDatasetIds(content: string): string[] {
-  const idMatches = content.match(/\/datasets\/view\/([a-f0-9-]{36})/gi) || [];
-  return [...new Set(idMatches.map((m) => m.replace('/datasets/view/', '')))];
+  // Pattern 1: UUID in dataset view URLs
+  const viewPattern = /\/datasets\/view\/([a-f0-9-]{36})/gi;
+  const viewMatches = content.match(viewPattern) || [];
+
+  // Pattern 2: UUID in data attributes
+  const dataPattern = /data-id=["']([a-f0-9-]{36})["']/gi;
+  const dataMatches = content.match(dataPattern) || [];
+
+  // Pattern 3: UUID in href attributes
+  const hrefPattern = /href=["'][^"']*([a-f0-9-]{36})[^"']*["']/gi;
+  const hrefMatches = content.match(hrefPattern) || [];
+
+  // Pattern 4: Any UUID (less reliable but catches more)
+  const uuidPattern = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/gi;
+  const uuidMatches = content.match(uuidPattern) || [];
+
+  const allMatches = new Set<string>();
+
+  // Extract IDs from view matches
+  viewMatches.forEach((m) => {
+    const id = m.replace('/datasets/view/', '').toLowerCase();
+    if (id) allMatches.add(id);
+  });
+
+  // Extract IDs from data matches
+  dataMatches.forEach((m) => {
+    const match = m.match(/[a-f0-9-]{36}/i);
+    if (match) allMatches.add(match[0].toLowerCase());
+  });
+
+  // Extract IDs from href matches
+  hrefMatches.forEach((m) => {
+    const match = m.match(/[a-f0-9-]{36}/i);
+    if (match) allMatches.add(match[0].toLowerCase());
+  });
+
+  // Add UUID matches (filter common false positives)
+  uuidMatches.forEach((id) => {
+    const lowerId = id.toLowerCase();
+    // Filter out common non-dataset UUIDs
+    if (!lowerId.includes('0000-0000') && !lowerId.startsWith('00000000')) {
+      allMatches.add(lowerId);
+    }
+  });
+
+  return Array.from(allMatches);
+}
+
+/**
+ * استخراج Dataset من استجابة API
+ */
+function extractDatasetsFromAPIResponse(responseBody: string): DatasetFromAPI[] {
+  const datasets: DatasetFromAPI[] = [];
+
+  try {
+    const data = JSON.parse(responseBody);
+
+    // Check different possible response structures
+    const items = data.data || data.results || data.items || data.datasets || data;
+
+    if (Array.isArray(items)) {
+      items.forEach((item: any) => {
+        if (item.id || item.uuid || item.datasetId) {
+          datasets.push({
+            id: (item.id || item.uuid || item.datasetId).toString().toLowerCase(),
+            titleAr: item.titleAr || item.title_ar || item.nameAr || item.name,
+            titleEn: item.titleEn || item.title_en || item.nameEn,
+            category: item.category?.titleAr || item.categoryAr || item.category,
+            organization: item.organization?.titleAr || item.organizationAr || item.publisher,
+          });
+        }
+      });
+    }
+
+    // Also check for nested datasets
+    if (data.content && Array.isArray(data.content)) {
+      data.content.forEach((item: any) => {
+        if (item.id) {
+          datasets.push({
+            id: item.id.toString().toLowerCase(),
+            titleAr: item.titleAr || item.title,
+            titleEn: item.titleEn,
+            category: item.category?.titleAr,
+          });
+        }
+      });
+    }
+  } catch (e) {
+    // Not valid JSON, ignore
+  }
+
+  return datasets;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -116,157 +221,350 @@ function extractDatasetIds(content: string): string[] {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * اكتشاف Datasets من صفحة واحدة مع Infinite Scroll
+ * اكتشاف Datasets مع اعتراض طلبات الشبكة
+ * Uses network interception to capture API responses
  */
-async function discoverFromPage(
+async function discoverWithNetworkInterception(
   page: puppeteer.Page,
   url: string,
   maxScrolls: number = MAX_SCROLL_ATTEMPTS
-): Promise<string[]> {
+): Promise<{ ids: Set<string>; apiDatasets: DatasetFromAPI[] }> {
   const allIds = new Set<string>();
+  const apiDatasets: DatasetFromAPI[] = [];
+  const capturedAPIs: string[] = [];
+
+  // Setup network interception
+  await page.setRequestInterception(true);
+
+  page.on('request', (request) => {
+    request.continue();
+  });
+
+  page.on('response', async (response) => {
+    const url = response.url();
+
+    // Capture API responses that might contain dataset information
+    if (
+      url.includes('/api/') ||
+      url.includes('/data/') ||
+      url.includes('datasets') ||
+      url.includes('search')
+    ) {
+      try {
+        const contentType = response.headers()['content-type'] || '';
+        if (contentType.includes('application/json')) {
+          const body = await response.text();
+
+          // Try to extract datasets from API response
+          const datasets = extractDatasetsFromAPIResponse(body);
+          if (datasets.length > 0) {
+            datasets.forEach((d) => {
+              allIds.add(d.id);
+              apiDatasets.push(d);
+            });
+
+            if (!capturedAPIs.includes(url)) {
+              capturedAPIs.push(url);
+              logger.info(`   📡 API captured: ${url.substring(0, 80)}... (${datasets.length} datasets)`);
+            }
+          }
+
+          // Also extract IDs from raw JSON
+          const idsFromJson = body.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi) || [];
+          idsFromJson.forEach((id) => allIds.add(id.toLowerCase()));
+        }
+      } catch (e) {
+        // Response body might not be available
+      }
+    }
+  });
 
   try {
+    logger.info(`   🌐 Loading: ${url}`);
     await page.goto(url, {
       waitUntil: 'networkidle2',
       timeout: PAGE_LOAD_TIMEOUT,
     });
 
-    // Wait for initial load
+    // Wait for dynamic content
     await delay(5000);
 
-    // Extract initial IDs
+    // Extract IDs from initial page content
     let content = await page.content();
     extractDatasetIds(content).forEach((id) => allIds.add(id));
-    logger.info(`   📄 Initial load: ${allIds.size} datasets`);
+    logger.info(`   📄 Initial: ${allIds.size} datasets`);
 
-    // Scroll to load more (infinite scroll)
-    let previousHeight = 0;
-    let scrollAttempts = 0;
+    // Scroll to load more content
+    let previousCount = allIds.size;
     let noChangeCount = 0;
-    let lastCount = allIds.size;
+    let scrollAttempts = 0;
+    let currentPage = 1;
+    let paginationFailed = false;
 
     while (scrollAttempts < maxScrolls && noChangeCount < 5) {
-      // Scroll down
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await delay(REQUEST_DELAY);
+      // Scroll to bottom
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      await delay(SCROLL_DELAY);
 
-      // Check for new content
-      const currentHeight = await page.evaluate(() => document.body.scrollHeight);
-      content = await page.content();
-      const newIds = extractDatasetIds(content);
-      newIds.forEach((id) => allIds.add(id));
-
-      // Check if we got new data
-      if (allIds.size === lastCount && currentHeight === previousHeight) {
-        noChangeCount++;
-      } else {
-        noChangeCount = 0;
-        if (allIds.size > lastCount) {
-          logger.info(`   📜 Scroll ${scrollAttempts + 1}: Found ${allIds.size} datasets (+${allIds.size - lastCount})`);
-        }
-      }
-
-      lastCount = allIds.size;
-      previousHeight = currentHeight;
-      scrollAttempts++;
-
-      // Try clicking "Load More" button if exists
+      // Try to click "Load More" or "Show More" buttons
       try {
-        const loadMoreButton = await page.$('button[class*="load-more"], .load-more, [ng-click*="loadMore"]');
-        if (loadMoreButton) {
-          await loadMoreButton.click();
-          await delay(REQUEST_DELAY);
-          logger.info(`   🔘 Clicked "Load More" button`);
+        const loadMoreSelectors = [
+          'button[class*="load-more"]',
+          'button[class*="show-more"]',
+          '.load-more',
+          '.show-more',
+          '[ng-click*="loadMore"]',
+          '[ng-click*="showMore"]',
+          'a[class*="more"]',
+          'button:contains("المزيد")',
+          'button:contains("تحميل المزيد")',
+          'button:contains("عرض المزيد")',
+        ];
+
+        for (const selector of loadMoreSelectors) {
+          const button = await page.$(selector);
+          if (button) {
+            await button.click();
+            await delay(SCROLL_DELAY);
+            logger.info(`   🔘 Clicked load more button`);
+            break;
+          }
         }
       } catch {
-        // No load more button, continue scrolling
+        // No button found
       }
+
+      // Try MULTIPLE pagination selectors
+      if (!paginationFailed) {
+        try {
+          const paginationSelectors = [
+            'a.page-link:not(.disabled)',
+            '.pagination a[aria-label="Next"]',
+            '.next-page',
+            'a[rel="next"]',
+            '.pagination li:not(.disabled) a:contains("التالي")',
+            '.pagination li:not(.disabled) a:contains("Next")',
+            'button[aria-label="Next page"]',
+            '.pagination-next:not(.disabled)',
+            'a.pagination__next',
+            '[class*="pagination"] [class*="next"]:not([disabled])',
+            'nav[aria-label="pagination"] a:last-child',
+          ];
+
+          let clicked = false;
+          for (const selector of paginationSelectors) {
+            try {
+              const nextPageButton = await page.$(selector);
+              if (nextPageButton) {
+                const isDisabled = await page.evaluate((el) => {
+                  return el.classList.contains('disabled') ||
+                         el.getAttribute('disabled') !== null ||
+                         el.getAttribute('aria-disabled') === 'true';
+                }, nextPageButton);
+
+                if (!isDisabled) {
+                  await nextPageButton.click();
+                  await delay(REQUEST_DELAY);
+                  currentPage++;
+                  logger.info(`   📄 Navigated to page ${currentPage}`);
+                  clicked = true;
+                  noChangeCount = 0; // Reset counter on successful page navigation
+                  break;
+                }
+              }
+            } catch {
+              continue;
+            }
+          }
+
+          if (!clicked) {
+            // If no pagination button found, try URL-based pagination
+            paginationFailed = true;
+          }
+        } catch {
+          paginationFailed = true;
+        }
+      }
+
+      // Extract new IDs
+      content = await page.content();
+      extractDatasetIds(content).forEach((id) => allIds.add(id));
+
+      if (allIds.size === previousCount) {
+        noChangeCount++;
+      } else {
+        if (scrollAttempts % 10 === 0 || allIds.size - previousCount > 10) {
+          logger.info(`   📜 Page ${currentPage}, Scroll ${scrollAttempts}: ${allIds.size} datasets (+${allIds.size - previousCount})`);
+        }
+        noChangeCount = 0;
+      }
+
+      previousCount = allIds.size;
+      scrollAttempts++;
     }
 
-    return Array.from(allIds);
+    logger.info(`   ✅ Discovery complete: ${allIds.size} datasets found (${currentPage} pages)`);
+    if (capturedAPIs.length > 0) {
+      logger.info(`   📡 Captured ${capturedAPIs.length} API endpoints`);
+    }
+
   } catch (error) {
-    logger.error(`   ❌ Error discovering from ${url}: ${error instanceof Error ? error.message : 'Unknown'}`);
-    return Array.from(allIds);
+    logger.error(`   ❌ Error: ${error instanceof Error ? error.message : 'Unknown'}`);
   }
+
+  return { ids: allIds, apiDatasets };
 }
 
 /**
- * اكتشاف Datasets من قسم معين
+ * اكتشاف من خلال التنقل بين صفحات الـ Pagination مباشرة
+ * Uses URL-based pagination to iterate through ALL pages
  */
-async function discoverFromCategory(
+async function discoverWithURLPagination(
   page: puppeteer.Page,
-  category: CategoryInfo,
+  baseUrl: string,
+  maxPages: number = 500,
   onProgress?: (progress: DiscoveryProgress) => void
-): Promise<string[]> {
-  logger.info(`\n📁 اكتشاف قسم: ${category.nameAr} (${category.nameEn})`);
-
+): Promise<{ ids: Set<string>; apiDatasets: DatasetFromAPI[] }> {
   const allIds = new Set<string>();
-  let pageNum = 1;
+  const allApiDatasets: DatasetFromAPI[] = [];
+  let consecutiveEmptyPages = 0;
+  const MAX_EMPTY_PAGES = 3;
 
-  // Try different URL patterns
-  const urlPatterns = [
-    `${DATASETS_URL}?category=${category.id}`,
-    `${DATASETS_URL}?category=${category.slug}`,
-    `${DATASETS_URL}?filter=${category.nameAr}`,
-    `${DATASETS_URL}?q=${encodeURIComponent(category.nameAr)}`,
-  ];
+  logger.info(`\n📄 Starting URL-based pagination discovery...`);
 
-  for (const url of urlPatterns) {
-    try {
-      const ids = await discoverFromPage(page, url, 50);
-      ids.forEach((id) => allIds.add(id));
+  for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+    // Try different pagination URL formats
+    const paginationUrls = [
+      `${baseUrl}?page=${pageNum}`,
+      `${baseUrl}?p=${pageNum}`,
+      `${baseUrl}?offset=${(pageNum - 1) * 20}`,
+      `${baseUrl}&page=${pageNum}`,
+    ];
 
-      if (allIds.size > 0) {
-        logger.info(`   ✅ Found ${allIds.size} datasets in ${category.nameAr}`);
-        break;
+    let pageFound = false;
+
+    for (const url of paginationUrls) {
+      try {
+        await page.goto(url, {
+          waitUntil: 'networkidle2',
+          timeout: PAGE_LOAD_TIMEOUT,
+        });
+
+        await delay(3000);
+
+        const content = await page.content();
+        const pageIds = extractDatasetIds(content);
+
+        if (pageIds.length > 0) {
+          const newCount = pageIds.filter((id) => !allIds.has(id)).length;
+          pageIds.forEach((id) => allIds.add(id));
+
+          if (newCount > 0) {
+            consecutiveEmptyPages = 0;
+            logger.info(`   📄 Page ${pageNum}: +${newCount} new (total: ${allIds.size})`);
+
+            if (onProgress) {
+              onProgress({
+                category: 'pagination',
+                page: pageNum,
+                found: newCount,
+                total: allIds.size,
+              });
+            }
+          } else {
+            consecutiveEmptyPages++;
+          }
+
+          pageFound = true;
+          break;
+        }
+      } catch {
+        continue;
       }
-    } catch {
-      continue;
     }
+
+    if (!pageFound) {
+      consecutiveEmptyPages++;
+    }
+
+    // Stop if we've had multiple empty pages in a row
+    if (consecutiveEmptyPages >= MAX_EMPTY_PAGES) {
+      logger.info(`   ✅ Pagination complete: No new datasets for ${MAX_EMPTY_PAGES} consecutive pages`);
+      break;
+    }
+
+    await delay(REQUEST_DELAY);
   }
 
-  // Also try pagination if the site supports it
-  while (pageNum <= MAX_PAGES_PER_CATEGORY) {
-    const paginatedUrl = `${DATASETS_URL}?category=${category.id}&page=${pageNum}`;
+  return { ids: allIds, apiDatasets: allApiDatasets };
+}
+
+/**
+ * اكتشاف من عدة صفحات مع أنماط بحث مختلفة
+ */
+async function discoverFromMultiplePages(
+  page: puppeteer.Page,
+  onProgress?: (progress: DiscoveryProgress) => void
+): Promise<{ ids: Set<string>; apiDatasets: DatasetFromAPI[] }> {
+  const allIds = new Set<string>();
+  const allApiDatasets: DatasetFromAPI[] = [];
+
+  // Different URL patterns to try
+  const urlPatterns = [
+    `${DATASETS_URL}`,
+    `${DATASETS_URL}?page=1&size=100`,
+    `${DATASETS_URL}?limit=100&offset=0`,
+    `${BASE_URL}/ar/datasets?sort=newest`,
+    `${BASE_URL}/ar/datasets?sort=popular`,
+    `${BASE_URL}/ar/search?type=dataset`,
+  ];
+
+  // Also try search with common letters to get different results
+  const searchTerms = ['ا', 'ب', 'ت', 'م', 'ع', 'س', 'ح', 'و', 'ن', 'ل'];
+  searchTerms.forEach((term) => {
+    urlPatterns.push(`${BASE_URL}/ar/datasets?q=${encodeURIComponent(term)}`);
+  });
+
+  // Try each URL pattern
+  for (let i = 0; i < urlPatterns.length; i++) {
+    const url = urlPatterns[i];
 
     try {
-      await page.goto(paginatedUrl, {
-        waitUntil: 'networkidle2',
-        timeout: PAGE_LOAD_TIMEOUT,
-      });
+      logger.info(`\n📄 Pattern ${i + 1}/${urlPatterns.length}: ${url.substring(0, 60)}...`);
 
-      await delay(3000);
-      const content = await page.content();
-      const pageIds = extractDatasetIds(content);
+      const { ids, apiDatasets } = await discoverWithNetworkInterception(page, url, 30);
 
-      if (pageIds.length === 0) {
-        break; // No more pages
-      }
+      const newCount = Array.from(ids).filter((id) => !allIds.has(id)).length;
+      ids.forEach((id) => allIds.add(id));
+      apiDatasets.forEach((d) => allApiDatasets.push(d));
 
-      const beforeCount = allIds.size;
-      pageIds.forEach((id) => allIds.add(id));
-
-      if (allIds.size === beforeCount) {
-        break; // No new datasets
-      }
+      logger.info(`   📊 Found ${ids.size} (new: ${newCount}, total: ${allIds.size})`);
 
       if (onProgress) {
         onProgress({
-          category: category.nameAr,
-          page: pageNum,
-          found: pageIds.length,
+          category: 'متعدد',
+          page: i + 1,
+          found: ids.size,
           total: allIds.size,
         });
       }
 
-      pageNum++;
       await delay(REQUEST_DELAY);
-    } catch {
-      break;
+    } catch (error) {
+      logger.error(`   ❌ Error with pattern: ${error instanceof Error ? error.message : 'Unknown'}`);
     }
   }
 
-  return Array.from(allIds);
+  // NEW: Try URL-based pagination for comprehensive discovery
+  logger.info('\n══════ المرحلة الإضافية: Pagination بالـ URL ══════');
+  const { ids: paginationIds } = await discoverWithURLPagination(page, DATASETS_URL, 500, onProgress);
+  const newFromPagination = Array.from(paginationIds).filter((id) => !allIds.has(id)).length;
+  paginationIds.forEach((id) => allIds.add(id));
+  logger.info(`   📊 بعد Pagination: ${allIds.size} (جديد: ${newFromPagination})`);
+
+  return { ids: allIds, apiDatasets: allApiDatasets };
 }
 
 /**
@@ -277,7 +575,8 @@ export async function discoverAllDatasets(
   onProgress?: (progress: DiscoveryProgress) => void
 ): Promise<string[]> {
   logger.info('═══════════════════════════════════════════════════════');
-  logger.info('🔍 بدء اكتشاف شامل لكل الـ Datasets من كل الأقسام');
+  logger.info('🔍 بدء اكتشاف شامل لكل الـ Datasets - النسخة المحسنة v3');
+  logger.info('📌 التحسينات: Pagination كامل + كل الأقسام + اعتراض API');
   logger.info(`📊 عدد الأقسام: ${SAUDI_DATA_CATEGORIES.length}`);
   logger.info('═══════════════════════════════════════════════════════');
 
@@ -287,7 +586,7 @@ export async function discoverAllDatasets(
   }
 
   const allIds = new Set<string>();
-  const categoryStats: Record<string, number> = {};
+  const allApiDatasets: DatasetFromAPI[] = [];
   let browser;
 
   try {
@@ -302,29 +601,78 @@ export async function discoverAllDatasets(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
 
-    // First, discover from main page (no filters)
-    logger.info('\n📄 اكتشاف الصفحة الرئيسية...');
-    const mainPageIds = await discoverFromPage(page, DATASETS_URL, MAX_SCROLL_ATTEMPTS);
-    mainPageIds.forEach((id) => allIds.add(id));
-    categoryStats['الصفحة الرئيسية'] = mainPageIds.length;
-    logger.info(`   ✅ الصفحة الرئيسية: ${mainPageIds.length} dataset`);
+    // First: Try multiple page patterns
+    logger.info('\n══════ المرحلة 1: البحث بأنماط متعددة ══════');
+    const { ids: patternIds, apiDatasets: patternDatasets } = await discoverFromMultiplePages(page, onProgress);
+    patternIds.forEach((id) => allIds.add(id));
+    patternDatasets.forEach((d) => allApiDatasets.push(d));
+    logger.info(`📊 بعد البحث بأنماط متعددة: ${allIds.size} dataset`);
 
-    // Then discover from each category
+    // Second: Deep scroll on main page
+    logger.info('\n══════ المرحلة 2: التمرير العميق ══════');
+    const { ids: scrollIds } = await discoverWithNetworkInterception(page, DATASETS_URL, MAX_SCROLL_ATTEMPTS);
+    const newFromScroll = Array.from(scrollIds).filter((id) => !allIds.has(id)).length;
+    scrollIds.forEach((id) => allIds.add(id));
+    logger.info(`📊 بعد التمرير العميق: ${allIds.size} dataset (جديد: ${newFromScroll})`);
+
+    // Third: Try each category with FULL PAGINATION
+    logger.info('\n══════ المرحلة 3: البحث في كل قسم مع Pagination كامل ══════');
     for (const category of SAUDI_DATA_CATEGORIES) {
       try {
-        const categoryIds = await discoverFromCategory(page, category, onProgress);
-        const newCount = categoryIds.filter((id) => !allIds.has(id)).length;
-        categoryIds.forEach((id) => allIds.add(id));
-        categoryStats[category.nameAr] = newCount;
+        logger.info(`📁 قسم: ${category.nameAr}`);
+        const categoryStartCount = allIds.size;
 
-        logger.info(`   📊 ${category.nameAr}: ${categoryIds.length} (جديد: ${newCount})`);
-        logger.info(`   📈 الإجمالي حتى الآن: ${allIds.size}`);
+        // Try different category URL patterns
+        const categoryUrls = [
+          `${DATASETS_URL}?category=${category.id}`,
+          `${DATASETS_URL}?category=${encodeURIComponent(category.nameAr)}`,
+          `${BASE_URL}/ar/datasets?filter[category]=${category.id}`,
+          `${BASE_URL}/ar/search?type=dataset&category=${category.id}`,
+        ];
 
-        // Delay between categories to avoid rate limiting
-        await delay(REQUEST_DELAY * 2);
+        // First, find which URL pattern works
+        let workingUrl = '';
+        for (const url of categoryUrls) {
+          try {
+            const { ids } = await discoverWithNetworkInterception(page, url, 5);
+            if (ids.size > 0) {
+              workingUrl = url;
+              ids.forEach((id) => allIds.add(id));
+              break;
+            }
+          } catch {
+            continue;
+          }
+        }
+
+        // If we found a working URL, paginate through ALL pages
+        if (workingUrl) {
+          const { ids: categoryIds } = await discoverWithURLPagination(
+            page,
+            workingUrl,
+            100, // Max 100 pages per category
+            onProgress
+          );
+          categoryIds.forEach((id) => allIds.add(id));
+        }
+
+        const categoryNewCount = allIds.size - categoryStartCount;
+        if (categoryNewCount > 0) {
+          logger.info(`   ✅ ${category.nameAr}: +${categoryNewCount} جديد (إجمالي: ${allIds.size})`);
+        }
+
+        if (onProgress) {
+          onProgress({
+            category: category.nameAr,
+            page: 1,
+            found: categoryNewCount,
+            total: allIds.size,
+          });
+        }
+
+        await delay(REQUEST_DELAY);
       } catch (error) {
-        logger.error(`   ❌ خطأ في قسم ${category.nameAr}: ${error instanceof Error ? error.message : 'Unknown'}`);
-        categoryStats[category.nameAr] = 0;
+        logger.error(`   ❌ خطأ في قسم ${category.nameAr}`);
       }
     }
 
@@ -332,15 +680,9 @@ export async function discoverAllDatasets(
 
     // Log final stats
     logger.info('\n═══════════════════════════════════════════════════════');
-    logger.info('📊 ملخص الاكتشاف:');
+    logger.info('📊 ملخص الاكتشاف النهائي:');
     logger.info(`   📁 إجمالي الـ Datasets: ${allIds.size}`);
-    logger.info('   📋 حسب القسم:');
-    Object.entries(categoryStats)
-      .filter(([_, count]) => count > 0)
-      .sort((a, b) => b[1] - a[1])
-      .forEach(([cat, count]) => {
-        logger.info(`      • ${cat}: ${count}`);
-      });
+    logger.info(`   📡 Datasets من API: ${allApiDatasets.length}`);
     logger.info('═══════════════════════════════════════════════════════');
 
     return Array.from(allIds);
@@ -358,7 +700,7 @@ export async function discoverAllDatasets(
  * اكتشاف سريع - الصفحة الرئيسية فقط (للاستخدام المتكرر)
  */
 export async function discoverDatasets(): Promise<string[]> {
-  logger.info('🔍 بدء اكتشاف سريع (الصفحة الرئيسية فقط)...');
+  logger.info('🔍 بدء اكتشاف سريع (الصفحة الرئيسية + scroll)...');
 
   if (!BROWSERLESS_TOKEN) {
     logger.error('❌ BROWSERLESS_TOKEN غير موجود');
@@ -377,11 +719,11 @@ export async function discoverDatasets(): Promise<string[]> {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
 
-    const ids = await discoverFromPage(page, DATASETS_URL, 50);
+    const { ids } = await discoverWithNetworkInterception(page, DATASETS_URL, 50);
     await page.close();
 
-    logger.info(`✅ تم اكتشاف ${ids.length} dataset`);
-    return ids;
+    logger.info(`✅ تم اكتشاف ${ids.size} dataset`);
+    return Array.from(ids);
   } catch (error) {
     logger.error(`❌ خطأ في الاكتشاف: ${error instanceof Error ? error.message : 'Unknown'}`);
     return [];
@@ -587,6 +929,11 @@ export async function getDiscoveryStats() {
     lastDiscovery: lastDiscovery?.startedAt || null,
     lastDiscoveryResult: lastDiscovery?.metadata ? JSON.parse(lastDiscovery.metadata as string) : null,
     browserlessConfigured: !!BROWSERLESS_TOKEN,
+    platformInfo: {
+      name: 'منصة البيانات المفتوحة السعودية',
+      url: 'https://open.data.gov.sa',
+      estimatedTotal: '15,500+',
+    },
   };
 }
 
