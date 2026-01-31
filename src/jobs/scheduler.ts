@@ -192,8 +192,8 @@ export function scheduleDataPreFetch() {
     logger.info('⏰ Scheduled: Data pre-fetch starting');
 
     try {
-      // Pre-fetch top 30 datasets
-      const result = await preFetchTopDatasets(30);
+      // Pre-fetch top 100 datasets
+      const result = await preFetchTopDatasets(100);
 
       jobStatus.preFetch.success = result.success;
       jobStatus.preFetch.failed = result.failed;
@@ -435,7 +435,7 @@ export async function triggerFullDiscovery() {
 }
 
 // Trigger pre-fetch manually
-export async function triggerPreFetch(limit: number = 30) {
+export async function triggerPreFetch(limit: number = 100) {
   if (jobStatus.preFetch.running) {
     throw new Error('Pre-fetch already running');
   }

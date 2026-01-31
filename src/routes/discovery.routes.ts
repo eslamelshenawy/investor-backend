@@ -61,7 +61,7 @@ router.post('/cleanup', cleanupInvalidDatasets);
  */
 router.post('/prefetch', async (req, res) => {
   try {
-    const { limit = 30 } = req.body;
+    const { limit = 100 } = req.body;
     const { triggerPreFetch } = await import('../jobs/scheduler.js');
     const result = await triggerPreFetch(limit);
     res.json({ success: true, data: result });
