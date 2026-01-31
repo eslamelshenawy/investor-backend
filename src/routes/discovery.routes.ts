@@ -14,7 +14,41 @@ import {
 
 const router = Router();
 
-// كل الـ routes تحتاج تسجيل دخول + صلاحية Admin
+// ═══════════════════════════════════════════════════════════════════
+// Public Routes (بدون Auth - للتطوير والاختبار)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * @route   GET /api/discovery/stats
+ * @desc    الحصول على إحصائيات الاكتشاف والمزامنة
+ * @access  Public
+ */
+router.get('/stats', stats);
+
+/**
+ * @route   GET /api/discovery/categories
+ * @desc    الحصول على قائمة الأقسام المتاحة (38 قسم)
+ * @access  Public
+ */
+router.get('/categories', getCategories);
+
+/**
+ * @route   POST /api/discovery/start-full
+ * @desc    بدء اكتشاف شامل (بدون Auth - للاختبار)
+ * @access  Public
+ */
+router.post('/start-full', fullDiscoverAndSync);
+
+/**
+ * @route   POST /api/discovery/start-quick
+ * @desc    بدء اكتشاف سريع (بدون Auth - للاختبار)
+ * @access  Public
+ */
+router.post('/start-quick', discoverAndSync);
+
+// ═══════════════════════════════════════════════════════════════════
+// Protected Routes (تحتاج Auth + Admin)
+// ═══════════════════════════════════════════════════════════════════
 router.use(authenticate);
 router.use(requireRole('ADMIN'));
 
