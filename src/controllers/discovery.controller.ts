@@ -8,6 +8,8 @@ import {
   SAUDI_DATA_CATEGORIES,
 } from '../services/discovery.js';
 import { syncAllDatasets, syncSingleDataset } from '../services/saudiDataSync.js';
+import { fetchDatasetMetadata } from '../services/onDemandData.js';
+import { prisma } from '../services/database.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 import { logger } from '../utils/logger.js';
 
@@ -270,6 +272,76 @@ export async function syncOne(req: Request, res: Response) {
   }
 }
 
+/**
+ * تنظيف الـ Datasets الغير موجودة في المصدر
+ * POST /api/discovery/cleanup
+ */
+export async function cleanupInvalidDatasets(req: Request, res: Response) {
+  try {
+    logger.info('🧹 Starting dataset cleanup...');
+
+    // Get all PENDING datasets
+    const pendingDatasets = await prisma.dataset.findMany({
+      where: { syncStatus: 'PENDING' },
+      select: { id: true, externalId: true, nameAr: true },
+    });
+
+    logger.info(`📊 Checking ${pendingDatasets.length} pending datasets...`);
+
+    let validated = 0;
+    let invalid = 0;
+    const invalidIds: string[] = [];
+
+    // Check each dataset in batches
+    const batchSize = 10;
+    for (let i = 0; i < pendingDatasets.length; i += batchSize) {
+      const batch = pendingDatasets.slice(i, i + batchSize);
+
+      await Promise.all(
+        batch.map(async (dataset) => {
+          try {
+            const metadata = await fetchDatasetMetadata(dataset.externalId);
+            if (metadata) {
+              validated++;
+            } else {
+              invalid++;
+              invalidIds.push(dataset.externalId);
+              // Mark as FAILED
+              await prisma.dataset.update({
+                where: { id: dataset.id },
+                data: { syncStatus: 'FAILED' },
+              });
+            }
+          } catch {
+            invalid++;
+            invalidIds.push(dataset.externalId);
+          }
+        })
+      );
+
+      // Progress log
+      if ((i + batchSize) % 50 === 0) {
+        logger.info(`   📊 Progress: ${i + batchSize}/${pendingDatasets.length}`);
+      }
+    }
+
+    logger.info(`✅ Cleanup complete: ${validated} valid, ${invalid} invalid`);
+
+    return sendSuccess(res, {
+      message: `تم التحقق من ${pendingDatasets.length} dataset`,
+      data: {
+        total: pendingDatasets.length,
+        valid: validated,
+        invalid: invalid,
+        invalidIds: invalidIds.slice(0, 20), // First 20 only
+      },
+    });
+  } catch (err) {
+    logger.error('Cleanup failed:', err);
+    return sendError(res, 'Cleanup failed', 'فشل التنظيف', 500);
+  }
+}
+
 export default {
   discover,
   discoverAll,
@@ -280,4 +352,5 @@ export default {
   fullDiscoverAndSync,
   syncAll,
   syncOne,
+  cleanupInvalidDatasets,
 };

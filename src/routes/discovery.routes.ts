@@ -10,6 +10,7 @@ import {
   fullDiscoverAndSync,
   syncAll,
   syncOne,
+  cleanupInvalidDatasets,
 } from '../controllers/discovery.controller.js';
 
 const router = Router();
@@ -45,6 +46,13 @@ router.post('/start-full', fullDiscoverAndSync);
  * @access  Public
  */
 router.post('/start-quick', discoverAndSync);
+
+/**
+ * @route   POST /api/discovery/cleanup
+ * @desc    تنظيف الـ Datasets الغير موجودة (بدون Auth - للاختبار)
+ * @access  Public
+ */
+router.post('/cleanup', cleanupInvalidDatasets);
 
 // ═══════════════════════════════════════════════════════════════════
 // Protected Routes (تحتاج Auth + Admin)
