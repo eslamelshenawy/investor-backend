@@ -13,6 +13,8 @@ import {
   getDatasetPreview,
   fetchDatasetMetadata,
   clearDatasetCache,
+  fetchDatasetsList,
+  fetchAllDatasets,
 } from '../services/onDemandData.js';
 import { logger } from '../utils/logger.js';
 
@@ -419,6 +421,81 @@ export async function getSyncStatus(
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Get datasets list DIRECTLY from Saudi API (no DB)
+// NEW: This fetches from CKAN API with Redis caching
+// ═══════════════════════════════════════════════════════════════════
+
+export async function getSaudiDatasets(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const {
+      page = '1',
+      limit = '100',
+      search,
+      category,
+      refresh = 'false',
+    } = req.query;
+
+    const pageNum = parseInt(String(page), 10);
+    const limitNum = Math.min(parseInt(String(limit), 10), 500);
+    const forceRefresh = String(refresh) === 'true';
+
+    logger.info(`📊 API: Fetching Saudi datasets (page: ${pageNum}, limit: ${limitNum})`);
+
+    const result = await fetchDatasetsList({
+      page: pageNum,
+      limit: limitNum,
+      search: search ? String(search) : undefined,
+      category: category ? String(category) : undefined,
+      forceRefresh,
+    });
+
+    sendSuccess(res, {
+      datasets: result.datasets,
+      meta: {
+        page: result.page,
+        limit: limitNum,
+        total: result.total,
+        totalPages: Math.ceil(result.total / limitNum),
+        hasMore: result.hasMore,
+        fetchedAt: result.fetchedAt,
+        source: result.source,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * جلب كل الـ Datasets من Saudi API (مع pagination تلقائي)
+ */
+export async function getAllSaudiDatasets(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    logger.info(`🚀 API: Fetching ALL Saudi datasets`);
+
+    const datasets = await fetchAllDatasets();
+
+    sendSuccess(res, {
+      datasets,
+      meta: {
+        total: datasets.length,
+        fetchedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Export
 // ═══════════════════════════════════════════════════════════════════
 
@@ -430,4 +507,6 @@ export default {
   refreshDatasetCache,
   getCategories,
   getSyncStatus,
+  getSaudiDatasets,
+  getAllSaudiDatasets,
 };

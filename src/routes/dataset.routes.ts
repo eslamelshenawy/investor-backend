@@ -8,6 +8,8 @@ import {
   refreshDatasetCache,
   getCategories,
   getSyncStatus,
+  getSaudiDatasets,
+  getAllSaudiDatasets,
 } from '../controllers/dataset.controller.js';
 
 const router = Router();
@@ -22,6 +24,23 @@ const router = Router();
  * @access  Public
  */
 router.get('/', getDatasets);
+
+/**
+ * @route   GET /api/datasets/saudi
+ * @desc    جلب قائمة الـ Datasets مباشرة من Saudi API (مع Redis cache)
+ * @query   page, limit, search, category, refresh
+ * @access  Public
+ * @note    هذا الـ endpoint يجلب مباشرة من البوابة الوطنية بدون DB
+ */
+router.get('/saudi', getSaudiDatasets);
+
+/**
+ * @route   GET /api/datasets/saudi/all
+ * @desc    جلب كل الـ Datasets من Saudi API (pagination تلقائي)
+ * @access  Public
+ * @note    قد يستغرق وقت لجلب كل الـ Datasets
+ */
+router.get('/saudi/all', getAllSaudiDatasets);
 
 /**
  * @route   GET /api/datasets/categories
