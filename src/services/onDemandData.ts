@@ -154,14 +154,24 @@ export async function fetchDatasetResources(datasetId: string): Promise<DatasetR
 
 /**
  * جلب بيانات CSV من رابط
+ * يستخدم headers تشبه Browser لتجاوز WAF
  */
 async function fetchCSVData(url: string): Promise<Record<string, unknown>[]> {
   try {
-    const response = await axios.get(url, {
+    // Encode URL properly to handle spaces
+    const encodedUrl = encodeURI(url);
+
+    const response = await axios.get(encodedUrl, {
       responseType: 'text',
       timeout: REQUEST_TIMEOUT,
       headers: {
-        'User-Agent': 'InvestorRadar/2.0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/csv,text/plain,*/*',
+        'Accept-Language': 'ar,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Referer': 'https://open.data.gov.sa/',
+        'Origin': 'https://open.data.gov.sa',
       },
     });
 
