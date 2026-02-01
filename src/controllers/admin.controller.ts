@@ -8,6 +8,7 @@ import { prisma } from '../services/database.js';
 import {
   getJobStatus,
   triggerFullSync,
+  triggerPortalSync,
   triggerAIAnalysis,
   triggerContentGeneration,
 } from '../jobs/scheduler.js';
@@ -131,6 +132,24 @@ export async function triggerContent(
   }
 }
 
+// Trigger portal sync (Browserless)
+export async function triggerPortal(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const result = await triggerPortalSync();
+    sendSuccess(res, result, 'Portal sync triggered successfully', 'تم تشغيل المزامنة من المنصة بنجاح');
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('already running')) {
+      sendError(res, 'Portal sync already running', 'المزامنة من المنصة قيد التشغيل بالفعل', 409);
+      return;
+    }
+    next(error);
+  }
+}
+
 // Get all users (admin only)
 export async function getUsers(
   req: Request,
@@ -229,6 +248,7 @@ export default {
   getSystemStats,
   getJobsStatus,
   triggerSync,
+  triggerPortal,
   triggerAnalysis,
   triggerContent,
   getUsers,

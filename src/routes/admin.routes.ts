@@ -3,6 +3,7 @@ import {
   getSystemStats,
   getJobsStatus,
   triggerSync,
+  triggerPortal,
   triggerAnalysis,
   triggerContent,
   getUsers,
@@ -24,6 +25,7 @@ router.get('/logs', getSyncLogs);
 
 // Manual job triggers
 router.post('/trigger/sync', triggerSync);
+router.post('/trigger/portal', triggerPortal);
 router.post('/trigger/analysis', triggerAnalysis);
 router.post('/trigger/content', triggerContent);
 

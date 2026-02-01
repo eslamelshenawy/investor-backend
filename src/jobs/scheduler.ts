@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { syncAllDatasets } from '../services/saudiDataSync.js';
+import { syncAllDatasets as syncFromPortal } from '../services/datasetSync.js';
 import { analyzeDatasets, generateDailySummary } from '../services/aiAnalysis.js';
 import { generateMarketReport, createGeneratedContent } from '../services/contentGeneration.js';
 import { findNewDatasets, addNewDatasets, SAUDI_DATA_CATEGORIES } from '../services/discovery.js';
@@ -10,6 +11,7 @@ import { logger } from '../utils/logger.js';
 // Job status tracking
 const jobStatus = {
   fullSync: { running: false, lastRun: null as Date | null, lastResult: null as string | null },
+  portalSync: { running: false, lastRun: null as Date | null, totalSynced: 0, newDatasets: 0 },
   quickCheck: { running: false, lastRun: null as Date | null },
   aiAnalysis: { running: false, lastRun: null as Date | null, signalsGenerated: 0 },
   contentGen: { running: false, lastRun: null as Date | null, contentGenerated: 0 },
@@ -43,6 +45,36 @@ export function scheduleFullSync() {
   });
 
   logger.info('📅 Scheduled: Full data sync (every 6 hours)');
+}
+
+// Portal Sync - Daily at 3 AM (0 3 * * *)
+// Uses Browserless to fetch ALL datasets from Saudi Open Data Portal
+export function schedulePortalSync() {
+  cron.schedule('0 3 * * *', async () => {
+    if (jobStatus.portalSync.running) {
+      logger.warn('Portal sync already running, skipping...');
+      return;
+    }
+
+    jobStatus.portalSync.running = true;
+    logger.info('═══════════════════════════════════════════════════════');
+    logger.info('⏰ Scheduled: Portal sync starting (Browserless)');
+    logger.info('═══════════════════════════════════════════════════════');
+
+    try {
+      const result = await syncFromPortal();
+      jobStatus.portalSync.totalSynced = result.totalSynced;
+      jobStatus.portalSync.newDatasets = result.newDatasets;
+      logger.info(`⏰ Portal sync completed: ${result.totalSynced} synced, ${result.newDatasets} new`);
+    } catch (error) {
+      logger.error('⏰ Portal sync failed:', error);
+    } finally {
+      jobStatus.portalSync.running = false;
+      jobStatus.portalSync.lastRun = new Date();
+    }
+  });
+
+  logger.info('📅 Scheduled: Portal sync (daily at 3 AM - uses Browserless)');
 }
 
 // Quick check - every hour (0 * * * *)
@@ -304,6 +336,7 @@ export function initializeScheduler() {
   logger.info('🕐 Initializing job scheduler...');
 
   scheduleFullSync();
+  schedulePortalSync();
   scheduleQuickCheck();
   scheduleAIAnalysis();
   scheduleContentGeneration();
@@ -336,6 +369,29 @@ export async function triggerFullSync() {
   } finally {
     jobStatus.fullSync.running = false;
     jobStatus.fullSync.lastRun = new Date();
+  }
+}
+
+// Trigger portal sync manually (uses Browserless)
+export async function triggerPortalSync() {
+  if (jobStatus.portalSync.running) {
+    throw new Error('Portal sync already running');
+  }
+
+  jobStatus.portalSync.running = true;
+
+  try {
+    logger.info('═══════════════════════════════════════════════════════');
+    logger.info('🔍 Manual: Portal sync starting (Browserless)');
+    logger.info('═══════════════════════════════════════════════════════');
+
+    const result = await syncFromPortal();
+    jobStatus.portalSync.totalSynced = result.totalSynced;
+    jobStatus.portalSync.newDatasets = result.newDatasets;
+    return result;
+  } finally {
+    jobStatus.portalSync.running = false;
+    jobStatus.portalSync.lastRun = new Date();
   }
 }
 
@@ -457,6 +513,7 @@ export default {
   initializeScheduler,
   getJobStatus,
   triggerFullSync,
+  triggerPortalSync,
   triggerAIAnalysis,
   triggerContentGeneration,
   triggerDiscovery,
