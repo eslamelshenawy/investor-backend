@@ -438,7 +438,7 @@ export async function getSaudiDatasets(
     } = req.query;
 
     const pageNum = parseInt(String(page), 10);
-    const limitNum = Math.min(parseInt(String(limit), 10), 500);
+    const limitNum = Math.min(parseInt(String(limit), 10), 15000); // Allow fetching all datasets
     const skip = (pageNum - 1) * limitNum;
 
     logger.info(`📊 API: Fetching datasets from DB (page: ${pageNum}, limit: ${limitNum})`);
