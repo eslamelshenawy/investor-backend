@@ -421,8 +421,7 @@ export async function getSyncStatus(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Get datasets list DIRECTLY from Saudi API (no DB)
-// NEW: This fetches from CKAN API with Redis caching
+// Get datasets list FROM DATABASE (synced by open-data-sync service)
 // ═══════════════════════════════════════════════════════════════════
 
 export async function getSaudiDatasets(
@@ -436,33 +435,81 @@ export async function getSaudiDatasets(
       limit = '100',
       search,
       category,
-      refresh = 'false',
     } = req.query;
 
     const pageNum = parseInt(String(page), 10);
     const limitNum = Math.min(parseInt(String(limit), 10), 500);
-    const forceRefresh = String(refresh) === 'true';
+    const skip = (pageNum - 1) * limitNum;
 
-    logger.info(`📊 API: Fetching Saudi datasets (page: ${pageNum}, limit: ${limitNum})`);
+    logger.info(`📊 API: Fetching datasets from DB (page: ${pageNum}, limit: ${limitNum})`);
 
-    const result = await fetchDatasetsList({
-      page: pageNum,
-      limit: limitNum,
-      search: search ? String(search) : undefined,
-      category: category ? String(category) : undefined,
-      forceRefresh,
-    });
+    // Build filter
+    const where: Record<string, unknown> = {};
+
+    if (category) {
+      where.category = { contains: String(category), mode: 'insensitive' };
+    }
+
+    if (search) {
+      const searchStr = String(search);
+      where.OR = [
+        { name: { contains: searchStr, mode: 'insensitive' } },
+        { nameAr: { contains: searchStr } },
+        { description: { contains: searchStr, mode: 'insensitive' } },
+        { descriptionAr: { contains: searchStr } },
+        { externalId: { contains: searchStr, mode: 'insensitive' } },
+      ];
+    }
+
+    // Query database
+    const [datasets, total] = await Promise.all([
+      prisma.dataset.findMany({
+        where,
+        skip,
+        take: limitNum,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          externalId: true,
+          name: true,
+          nameAr: true,
+          description: true,
+          descriptionAr: true,
+          category: true,
+          source: true,
+          sourceUrl: true,
+          recordCount: true,
+          syncStatus: true,
+          updatedAt: true,
+          createdAt: true,
+        },
+      }),
+      prisma.dataset.count({ where }),
+    ]);
+
+    // Transform to match frontend expected format
+    const formattedDatasets = datasets.map((d) => ({
+      id: d.externalId || d.id,
+      titleAr: d.nameAr || d.name,
+      titleEn: d.name,
+      descriptionAr: d.descriptionAr || d.description,
+      descriptionEn: d.description,
+      category: d.category,
+      organization: d.source,
+      recordCount: d.recordCount,
+      updatedAt: d.updatedAt?.toISOString(),
+    }));
 
     sendSuccess(res, {
-      datasets: result.datasets,
+      datasets: formattedDatasets,
       meta: {
-        page: result.page,
+        page: pageNum,
         limit: limitNum,
-        total: result.total,
-        totalPages: Math.ceil(result.total / limitNum),
-        hasMore: result.hasMore,
-        fetchedAt: result.fetchedAt,
-        source: result.source,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+        hasMore: skip + limitNum < total,
+        fetchedAt: new Date().toISOString(),
+        source: 'database',
       },
     });
   } catch (error) {
@@ -471,7 +518,7 @@ export async function getSaudiDatasets(
 }
 
 /**
- * جلب كل الـ Datasets من Saudi API (مع pagination تلقائي)
+ * جلب كل الـ Datasets من Database
  */
 export async function getAllSaudiDatasets(
   _req: Request,
@@ -479,15 +526,45 @@ export async function getAllSaudiDatasets(
   next: NextFunction
 ): Promise<void> {
   try {
-    logger.info(`🚀 API: Fetching ALL Saudi datasets`);
+    logger.info(`🚀 API: Fetching ALL datasets from DB`);
 
-    const datasets = await fetchAllDatasets();
+    const datasets = await prisma.dataset.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        externalId: true,
+        name: true,
+        nameAr: true,
+        description: true,
+        descriptionAr: true,
+        category: true,
+        source: true,
+        sourceUrl: true,
+        recordCount: true,
+        syncStatus: true,
+        updatedAt: true,
+      },
+    });
+
+    // Transform to match frontend expected format
+    const formattedDatasets = datasets.map((d) => ({
+      id: d.externalId || d.id,
+      titleAr: d.nameAr || d.name,
+      titleEn: d.name,
+      descriptionAr: d.descriptionAr || d.description,
+      descriptionEn: d.description,
+      category: d.category,
+      organization: d.source,
+      recordCount: d.recordCount,
+      updatedAt: d.updatedAt?.toISOString(),
+    }));
 
     sendSuccess(res, {
-      datasets,
+      datasets: formattedDatasets,
       meta: {
-        total: datasets.length,
+        total: formattedDatasets.length,
         fetchedAt: new Date().toISOString(),
+        source: 'database',
       },
     });
   } catch (error) {
