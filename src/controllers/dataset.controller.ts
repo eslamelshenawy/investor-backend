@@ -143,6 +143,7 @@ export async function getDataset(
       ...dataset,
       columns: dataset.columns ? JSON.parse(dataset.columns) : [],
       dataPreview: dataset.dataPreview ? JSON.parse(dataset.dataPreview) : [],
+      resources: dataset.resources || [],
     };
 
     // Cache result

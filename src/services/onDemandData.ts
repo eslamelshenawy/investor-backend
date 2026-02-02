@@ -10,6 +10,7 @@ import Papa from 'papaparse';
 import { cacheGet, cacheSet, CacheKeys } from './cache.js';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
+import prisma from '../config/database.js';
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -166,9 +167,34 @@ export async function fetchDatasetMetadata(datasetId: string): Promise<DatasetMe
 
 /**
  * جلب resources (روابط التحميل) للـ Dataset
+ * يستخدم DB أولاً ثم يجرب API كـ fallback
  */
 export async function fetchDatasetResources(datasetId: string): Promise<DatasetResource[]> {
+  // 1. Try database first (resources synced from sync script)
   try {
+    const dataset = await prisma.dataset.findFirst({
+      where: {
+        OR: [{ id: datasetId }, { externalId: datasetId }],
+      },
+      select: { resources: true },
+    });
+
+    if (dataset?.resources && Array.isArray(dataset.resources) && dataset.resources.length > 0) {
+      logger.info(`📦 Found ${dataset.resources.length} resources in DB for ${datasetId}`);
+      return (dataset.resources as any[]).map((r: any) => ({
+        id: r.id || '',
+        name: r.name || 'Resource',
+        format: r.format || '',
+        downloadUrl: r.url || '',
+      }));
+    }
+  } catch (error) {
+    logger.warn(`⚠️ DB resource lookup failed for ${datasetId}:`, error);
+  }
+
+  // 2. Fallback to API
+  try {
+    logger.info(`🌐 Fetching resources from API for ${datasetId}`);
     const data = await fetchWithRetry<{ resources?: DatasetResource[] }>(
       `${API_BASE}/datasets/resources?version=-1&dataset=${datasetId}`
     );

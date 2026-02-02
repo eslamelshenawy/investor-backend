@@ -154,6 +154,9 @@ model Dataset {
   columns       String    @default("[]")
   dataPreview   String    @default("[]") @map("data_preview")
 
+  // Resources - روابط الملفات (CSV, Excel, JSON)
+  resources     Json      @default("[]") @map("resources")
+
   // Sync info
   lastSyncAt    DateTime? @map("last_sync_at")
   syncStatus    String    @default("PENDING") @map("sync_status")
