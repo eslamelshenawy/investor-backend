@@ -23,13 +23,9 @@ async function generateDashboardsFromDatasets() {
   const datasets = await prisma.dataset.findMany({
     where: {
       isActive: true,
-      // Filter out auto-generated names - only get real dataset names
-      NOT: {
-        OR: [
-          { nameAr: { startsWith: 'مجموعة بيانات' } },
-          { name: { startsWith: 'مجموعة بيانات' } },
-        ]
-      }
+      // Real datasets have UUID format IDs (contain hyphen)
+      // Old auto-generated ones have CUID format (no hyphen)
+      id: { contains: '-' }
     },
     orderBy: { lastSyncAt: 'desc' },
   });
