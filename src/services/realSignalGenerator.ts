@@ -66,12 +66,13 @@ export async function generateRealSignals(): Promise<AnalysisResult> {
 
   try {
     // 1. جلب إحصائيات الـ datasets حسب التصنيف
+    logger.info('[generateRealSignals] Fetching category stats...');
     const categoryStats = await prisma.dataset.groupBy({
       by: ['category'],
       _count: { id: true },
-      _sum: { recordCount: true },
       orderBy: { _count: { id: 'desc' } },
     });
+    logger.info(`[generateRealSignals] Found ${categoryStats.length} categories`);
 
     // 2. جلب datasets المحدثة مؤخراً (آخر 7 أيام)
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -117,8 +118,8 @@ export async function generateRealSignals(): Promise<AnalysisResult> {
         type: 'TREND',
         title: `${sectorInfo.en} Sector Leads with ${topCategory._count.id} Datasets`,
         titleAr: `قطاع ${sectorInfo.ar} يتصدر بـ ${topCategory._count.id} مجموعة بيانات`,
-        summary: `The ${sectorInfo.en} sector has the highest number of datasets (${topCategory._count.id}) with ${topCategory._sum.recordCount || 0} total records, indicating strong data availability for investment analysis.`,
-        summaryAr: `يمتلك قطاع ${sectorInfo.ar} أكبر عدد من مجموعات البيانات (${topCategory._count.id}) مع ${topCategory._sum.recordCount || 0} سجل، مما يشير إلى توفر بيانات قوية للتحليل الاستثماري.`,
+        summary: `The ${sectorInfo.en} sector has the highest number of datasets (${topCategory._count.id}), indicating strong data availability for investment analysis.`,
+        summaryAr: `يمتلك قطاع ${sectorInfo.ar} أكبر عدد من مجموعات البيانات (${topCategory._count.id})، مما يشير إلى توفر بيانات قوية للتحليل الاستثماري.`,
         impactScore: Math.min(85, 50 + topCategory._count.id),
         confidence: 95,
         trend: 'UP',
@@ -127,7 +128,6 @@ export async function generateRealSignals(): Promise<AnalysisResult> {
         relatedDatasets: [],
         indicators: {
           datasetCount: topCategory._count.id,
-          totalRecords: topCategory._sum.recordCount || 0,
           category: topCategory.category,
         },
       });
@@ -242,8 +242,8 @@ export async function generateRealSignals(): Promise<AnalysisResult> {
         type: 'TREND',
         title: `${sectorInfo.en} Sector: ${secondCategory._count.id} Datasets Available`,
         titleAr: `قطاع ${sectorInfo.ar}: ${secondCategory._count.id} مجموعة بيانات متاحة`,
-        summary: `The ${sectorInfo.en} sector ranks second with ${secondCategory._count.id} datasets containing ${secondCategory._sum.recordCount || 0} records, presenting investment research opportunities.`,
-        summaryAr: `يحتل قطاع ${sectorInfo.ar} المرتبة الثانية بـ ${secondCategory._count.id} مجموعة بيانات تحتوي على ${secondCategory._sum.recordCount || 0} سجل، مما يقدم فرص بحث استثمارية.`,
+        summary: `The ${sectorInfo.en} sector ranks second with ${secondCategory._count.id} datasets, presenting investment research opportunities.`,
+        summaryAr: `يحتل قطاع ${sectorInfo.ar} المرتبة الثانية بـ ${secondCategory._count.id} مجموعة بيانات، مما يقدم فرص بحث استثمارية.`,
         impactScore: Math.min(75, 45 + secondCategory._count.id),
         confidence: 95,
         trend: 'STABLE',
@@ -252,7 +252,6 @@ export async function generateRealSignals(): Promise<AnalysisResult> {
         relatedDatasets: [],
         indicators: {
           datasetCount: secondCategory._count.id,
-          totalRecords: secondCategory._sum.recordCount || 0,
           category: secondCategory.category,
         },
       });

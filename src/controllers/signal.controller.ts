@@ -194,12 +194,17 @@ export async function triggerAnalysis(
   next: NextFunction
 ): Promise<void> {
   try {
+    console.log('[triggerAnalysis] Starting analysis...');
+
     // Try OpenAI first
     let result = await analyzeDatasets();
+    console.log('[triggerAnalysis] analyzeDatasets result:', result ? 'success' : 'null', 'signals:', result?.signals?.length || 0);
 
     // If OpenAI fails, use real data analysis (NO MOCK DATA)
     if (!result || result.signals.length === 0) {
+      console.log('[triggerAnalysis] Falling back to generateAndSaveRealSignals...');
       result = await generateAndSaveRealSignals();
+      console.log('[triggerAnalysis] generateAndSaveRealSignals result:', result ? 'success' : 'null', 'signals:', result?.signals?.length || 0);
     }
 
     if (!result || result.signals.length === 0) {
@@ -215,6 +220,7 @@ export async function triggerAnalysis(
       dataSource: 'REAL_DATA_ANALYSIS',
     }, 'Analysis completed with real data', 'تم إكمال التحليل من بيانات حقيقية');
   } catch (error) {
+    console.error('[triggerAnalysis] Error:', error);
     next(error);
   }
 }
