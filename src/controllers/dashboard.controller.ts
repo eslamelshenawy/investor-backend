@@ -53,9 +53,7 @@ export async function getDashboards(
     const where: any = {
       isActive: true,
       // Only real datasets with valid externalId (UUID format)
-      externalId: { contains: '-' },
-      // Only datasets with metadata (real data)
-      metadata: { not: null }
+      externalId: { contains: '-' }
     };
 
     // Filter by search
@@ -143,9 +141,7 @@ export async function getCategories(
       by: ['category'],
       where: {
         isActive: true,
-        externalId: { contains: '-' },
-        // Only datasets with metadata
-        metadata: { not: null }
+        externalId: { contains: '-' }
       },
       _count: { id: true },
     });

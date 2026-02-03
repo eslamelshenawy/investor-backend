@@ -102,49 +102,76 @@ async function callOpenAI(prompt: string): Promise<string | null> {
 
 /**
  * Analyze datasets and generate signals
+ * OPTIMIZED: Reduced memory usage for 512MB limit
  */
 export async function analyzeDatasets(): Promise<AnalysisResult | null> {
   logger.info('Starting AI analysis of datasets...');
 
   try {
-    // Get recent data records
+    // Check if OpenAI is available first (before loading data)
+    if (!config.openaiApiKey || config.openaiApiKey === 'sk-your-openai-api-key') {
+      logger.info('OpenAI not configured, using real data analysis');
+      return generateRealSignals();
+    }
+
+    // OPTIMIZED: Load only 50 records with minimal data to save memory
     const recentRecords = await prisma.dataRecord.findMany({
-      take: 1000,
+      take: 50, // Reduced from 1000
       orderBy: { recordedAt: 'desc' },
-      include: {
-        dataset: true,
+      select: {
+        data: true,
+        recordedAt: true,
+        dataset: {
+          select: {
+            name: true,
+            nameAr: true,
+            category: true,
+          },
+        },
       },
     });
 
     if (recentRecords.length === 0) {
-      logger.info('No data records to analyze');
-      return null;
+      logger.info('No data records, using real signal generator');
+      return generateRealSignals();
     }
 
-    // Group data by category
+    // Group data by category (limit data size)
     const dataByCategory: Record<string, unknown[]> = {};
     for (const record of recentRecords) {
       const category = record.dataset.category;
       if (!dataByCategory[category]) {
         dataByCategory[category] = [];
       }
-      dataByCategory[category].push({
-        dataset: record.dataset.name,
-        datasetAr: record.dataset.nameAr,
-        data: JSON.parse(record.data),
-        date: record.recordedAt,
-      });
+      // Limit to 5 records per category to save memory
+      if (dataByCategory[category].length < 5) {
+        try {
+          const parsedData = JSON.parse(record.data);
+          // Only keep first 10 fields to limit size
+          const limitedData = Object.fromEntries(
+            Object.entries(parsedData).slice(0, 10)
+          );
+          dataByCategory[category].push({
+            dataset: record.dataset.name,
+            datasetAr: record.dataset.nameAr,
+            data: limitedData,
+            date: record.recordedAt,
+          });
+        } catch {
+          // Skip records with invalid JSON
+        }
+      }
     }
 
     // Create analysis prompt
     const prompt = createAnalysisPrompt(dataByCategory);
 
-    // Call Gemini
+    // Call OpenAI
     const response = await callOpenAI(prompt);
 
     if (!response) {
       // NO MOCK DATA - Use real signal generator instead
-      logger.warn('OpenAI unavailable, falling back to real data analysis');
+      logger.warn('OpenAI call failed, falling back to real data analysis');
       return generateRealSignals();
     }
 
