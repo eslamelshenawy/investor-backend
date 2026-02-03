@@ -33,12 +33,9 @@ export const getOverviewStats = async (_req: Request, res: Response) => {
       // Total datasets count - REAL
       prisma.dataset.count(),
 
-      // Get unique categories - REAL
+      // Get unique categories - REAL (filter null in code)
       prisma.dataset.groupBy({
-        by: ['category'],
-        where: {
-          category: { not: null }
-        }
+        by: ['category']
       }),
 
       // Total signals count - REAL
@@ -81,10 +78,13 @@ export const getOverviewStats = async (_req: Request, res: Response) => {
       ? Math.round((recentDatasets / totalDatasets) * 100 * 10) / 10
       : 0;
 
+    // Filter out null categories
+    const validCategories = categoriesData.filter(c => c.category !== null);
+
     const stats = {
       // All values are REAL from database
       totalDatasets,
-      totalCategories: categoriesData.length,
+      totalCategories: validCategories.length,
       totalSignals,
       activeSignals,
       totalUsers,
@@ -119,17 +119,16 @@ export const getTrendingTopics = async (_req: Request, res: Response) => {
     }
 
     // Get REAL category counts from datasets
-    const categoryStats = await prisma.dataset.groupBy({
+    const categoryStatsRaw = await prisma.dataset.groupBy({
       by: ['category'],
       _count: { id: true },
-      where: {
-        category: { not: null }
-      },
       orderBy: {
         _count: { id: 'desc' }
       },
-      take: 10
+      take: 15
     });
+    // Filter out null categories
+    const categoryStats = categoryStatsRaw.filter(c => c.category !== null).slice(0, 10);
 
     // Also get tags from content if available
     const recentContent = await prisma.content.findMany({
@@ -404,15 +403,14 @@ export const getSourceStats = async (_req: Request, res: Response) => {
     }
 
     // Get dataset counts by source
-    const sources = await prisma.dataset.groupBy({
+    const sourcesRaw = await prisma.dataset.groupBy({
       by: ['source'],
       _count: { id: true },
-      where: {
-        source: { not: null }
-      },
       orderBy: { _count: { id: 'desc' } },
-      take: 10
+      take: 15
     });
+    // Filter out null sources
+    const sources = sourcesRaw.filter(s => s.source !== null).slice(0, 10);
 
     const result = {
       sources: sources.map(s => ({
