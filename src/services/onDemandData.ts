@@ -81,6 +81,7 @@ export interface DatasetListResult {
 
 const API_BASE = 'https://open.data.gov.sa/data/api';
 const CKAN_BASE = 'https://open.data.gov.sa/api/3/action';
+const FILES_BASE = 'https://open.data.gov.sa/data/files';
 const CACHE_TTL = 3600; // 1 hour cache
 const CACHE_TTL_METADATA = 86400; // 24 hours for metadata
 const CACHE_TTL_LIST = 21600; // 6 hours for datasets list
@@ -181,29 +182,27 @@ export async function fetchDatasetResources(datasetId: string): Promise<DatasetR
 
     if (dataset?.resources && Array.isArray(dataset.resources) && dataset.resources.length > 0) {
       logger.info(`📦 Found ${dataset.resources.length} resources in DB for ${datasetId}`);
-      return (dataset.resources as any[]).map((r: any) => ({
-        id: r.id || '',
-        name: r.name || 'Resource',
-        format: r.format || '',
-        downloadUrl: r.url || '',
-      }));
+      return (dataset.resources as any[]).map((r: any) => {
+        // Build full URL from relative path stored in DB
+        let downloadUrl = r.url || '';
+        if (downloadUrl && !downloadUrl.startsWith('http')) {
+          downloadUrl = `${FILES_BASE}/${downloadUrl}`;
+        }
+        return {
+          id: r.id || '',
+          name: r.name || 'Resource',
+          format: r.format || '',
+          downloadUrl,
+        };
+      });
     }
   } catch (error) {
     logger.warn(`⚠️ DB resource lookup failed for ${datasetId}:`, error);
   }
 
-  // 2. Fallback to API
-  try {
-    logger.info(`🌐 Fetching resources from API for ${datasetId}`);
-    const data = await fetchWithRetry<{ resources?: DatasetResource[] }>(
-      `${API_BASE}/datasets/resources?version=-1&dataset=${datasetId}`
-    );
-
-    return data?.resources || [];
-  } catch (error) {
-    logger.error(`❌ Failed to fetch resources for ${datasetId}:`, error);
-    return [];
-  }
+  // 2. No API fallback - resources must be in database
+  logger.warn(`⚠️ No resources found in DB for ${datasetId} - data not synced yet`);
+  return [];
 }
 
 /**

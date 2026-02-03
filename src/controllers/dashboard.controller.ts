@@ -21,7 +21,16 @@ const DASHBOARD_CATEGORIES = [
 // Generate dashboards from datasets
 async function generateDashboardsFromDatasets() {
   const datasets = await prisma.dataset.findMany({
-    where: { isActive: true },
+    where: {
+      isActive: true,
+      // Filter out auto-generated names - only get real dataset names
+      NOT: {
+        OR: [
+          { nameAr: { startsWith: 'مجموعة بيانات' } },
+          { name: { startsWith: 'مجموعة بيانات' } },
+        ]
+      }
+    },
     orderBy: { lastSyncAt: 'desc' },
   });
 

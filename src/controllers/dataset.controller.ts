@@ -84,6 +84,7 @@ export async function getDatasets(
           sourceUrl: true,
           recordCount: true,
           columns: true,
+          resources: true,
           lastSyncAt: true,
           syncStatus: true,
           updatedAt: true,
@@ -178,7 +179,7 @@ export async function getDatasetData(
     const offset = (pageNum - 1) * limitNum;
     const forceRefresh = String(refresh) === 'true';
 
-    // Find dataset to get externalId
+    // Find dataset to get externalId and resources
     const dataset = await prisma.dataset.findFirst({
       where: {
         OR: [{ id }, { externalId: id }],
@@ -191,6 +192,7 @@ export async function getDatasetData(
         nameAr: true,
         columns: true,
         recordCount: true,
+        resources: true,
       },
     });
 
