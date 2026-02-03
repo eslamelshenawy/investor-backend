@@ -5,6 +5,7 @@ import {
   getTimeline,
   getContentTypes,
   getPopularTags,
+  getTrending,
   generateFromSignal,
   generateReport,
   generateSectorReport,
@@ -19,6 +20,7 @@ router.get('/feed', getFeed);
 router.get('/timeline', getTimeline);
 router.get('/types', getContentTypes);
 router.get('/tags', getPopularTags);
+router.get('/trending', getTrending);
 router.get('/:id', getContent);
 
 // Protected routes (Admin only)

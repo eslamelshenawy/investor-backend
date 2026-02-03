@@ -10,6 +10,7 @@ import entityRoutes from './entity.routes.js';
 import widgetRoutes from './widget.routes.js';
 import discoveryRoutes from './discovery.routes.js';
 import syncRoutes from './sync.routes.js';
+import statsRoutes from './stats.routes.js';
 
 const router = Router();
 
@@ -34,5 +35,6 @@ router.use('/entities', entityRoutes);
 router.use('/widgets', widgetRoutes);
 router.use('/discovery', discoveryRoutes);
 router.use('/sync', syncRoutes);
+router.use('/stats', statsRoutes);
 
 export default router;
