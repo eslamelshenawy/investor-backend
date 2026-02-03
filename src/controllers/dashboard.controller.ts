@@ -52,8 +52,8 @@ export async function getDashboards(
     // Build where clause
     const where: any = {
       isActive: true,
-      // Only real datasets with UUID format
-      id: { contains: '-' }
+      // Only real datasets with valid externalId (UUID format)
+      externalId: { contains: '-' }
     };
 
     // Filter by search
@@ -138,7 +138,7 @@ export async function getCategories(
       by: ['category'],
       where: {
         isActive: true,
-        id: { contains: '-' }
+        externalId: { contains: '-' }
       },
       _count: { id: true },
     });
