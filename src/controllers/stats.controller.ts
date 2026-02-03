@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/database.js';
-import { success, error } from '../utils/response.js';
+import { sendSuccess, sendError } from '../utils/response.js';
 import { logger } from '../utils/logger.js';
-import { cache } from '../services/cache.js';
+import { cacheGet, cacheSet } from '../services/cache.js';
 
 const CACHE_TTL = 60; // 1 minute cache for fresh data
 
@@ -14,9 +14,9 @@ export const getOverviewStats = async (_req: Request, res: Response) => {
   try {
     // Try to get from cache first
     const cacheKey = 'stats:overview:real';
-    const cachedStats = await cache.get(cacheKey);
+    const cachedStats = await cacheGet<string>(cacheKey);
     if (cachedStats) {
-      return res.json(success(JSON.parse(cachedStats), 'Stats retrieved from cache'));
+      return sendSuccess(res, JSON.parse(cachedStats));
     }
 
     // Fetch REAL stats from database in parallel
@@ -97,12 +97,12 @@ export const getOverviewStats = async (_req: Request, res: Response) => {
     };
 
     // Cache the results
-    await cache.set(cacheKey, JSON.stringify(stats), CACHE_TTL);
+    await cacheSet(cacheKey, JSON.stringify(stats), CACHE_TTL);
 
-    return res.json(success(stats, 'Real stats retrieved successfully'));
+    return sendSuccess(res, stats);
   } catch (err) {
     logger.error('Error fetching overview stats:', err);
-    return res.status(500).json(error('Failed to fetch stats', 'فشل في جلب الإحصائيات'));
+    return sendError(res, 'Failed to fetch stats', 'فشل في جلب الإحصائيات', 500);
   }
 };
 
@@ -113,9 +113,9 @@ export const getOverviewStats = async (_req: Request, res: Response) => {
 export const getTrendingTopics = async (_req: Request, res: Response) => {
   try {
     const cacheKey = 'stats:trending:real';
-    const cachedTrending = await cache.get(cacheKey);
+    const cachedTrending = await cacheGet<string>(cacheKey);
     if (cachedTrending) {
-      return res.json(success(JSON.parse(cachedTrending), 'Trending topics from cache'));
+      return sendSuccess(res, JSON.parse(cachedTrending));
     }
 
     // Get REAL category counts from datasets
@@ -197,12 +197,12 @@ export const getTrendingTopics = async (_req: Request, res: Response) => {
       isRealData: true
     };
 
-    await cache.set(cacheKey, JSON.stringify(result), 300);
+    await cacheSet(cacheKey, JSON.stringify(result), 300);
 
-    return res.json(success(result, 'Real trending topics retrieved'));
+    return sendSuccess(res, result);
   } catch (err) {
     logger.error('Error fetching trending topics:', err);
-    return res.status(500).json(error('Failed to fetch trending', 'فشل في جلب المواضيع الرائجة'));
+    return sendError(res, 'Failed to fetch trending', 'فشل في جلب المواضيع الرائجة', 500);
   }
 };
 
@@ -212,9 +212,9 @@ export const getTrendingTopics = async (_req: Request, res: Response) => {
 export const getRecentActivity = async (_req: Request, res: Response) => {
   try {
     const cacheKey = 'stats:activity:real';
-    const cached = await cache.get(cacheKey);
+    const cached = await cacheGet<string>(cacheKey);
     if (cached) {
-      return res.json(success(JSON.parse(cached), 'Activity from cache'));
+      return sendSuccess(res, JSON.parse(cached));
     }
 
     // Get recent signals
@@ -283,12 +283,12 @@ export const getRecentActivity = async (_req: Request, res: Response) => {
       isRealData: true
     };
 
-    await cache.set(cacheKey, JSON.stringify(result), 60);
+    await cacheSet(cacheKey, JSON.stringify(result), 60);
 
-    return res.json(success(result, 'Real activity retrieved'));
+    return sendSuccess(res, result);
   } catch (err) {
     logger.error('Error fetching activity:', err);
-    return res.status(500).json(error('Failed to fetch activity'));
+    return sendError(res, 'Failed to fetch activity', 'فشل في جلب النشاط', 500);
   }
 };
 
@@ -300,7 +300,7 @@ export const getUserStats = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
 
     if (!userId) {
-      return res.status(401).json(error('Not authenticated', 'غير مسجل دخول'));
+      return sendError(res, 'Not authenticated', 'غير مسجل دخول', 401);
     }
 
     // Get user's real stats
@@ -328,7 +328,7 @@ export const getUserStats = async (req: Request, res: Response) => {
     ]);
 
     if (!user) {
-      return res.status(404).json(error('User not found', 'المستخدم غير موجود'));
+      return sendError(res, 'User not found', 'المستخدم غير موجود', 404);
     }
 
     const result = {
@@ -341,10 +341,10 @@ export const getUserStats = async (req: Request, res: Response) => {
       isRealData: true
     };
 
-    return res.json(success(result, 'User stats retrieved'));
+    return sendSuccess(res, result);
   } catch (err) {
     logger.error('Error fetching user stats:', err);
-    return res.status(500).json(error('Failed to fetch user stats'));
+    return sendError(res, 'Failed to fetch user stats', 'فشل في جلب إحصائيات المستخدم', 500);
   }
 };
 
@@ -354,9 +354,9 @@ export const getUserStats = async (req: Request, res: Response) => {
 export const getCategoryStats = async (_req: Request, res: Response) => {
   try {
     const cacheKey = 'stats:categories:real';
-    const cached = await cache.get(cacheKey);
+    const cached = await cacheGet<string>(cacheKey);
     if (cached) {
-      return res.json(success(JSON.parse(cached), 'Category stats from cache'));
+      return sendSuccess(res, JSON.parse(cached));
     }
 
     // Get REAL dataset counts by category
@@ -383,12 +383,12 @@ export const getCategoryStats = async (_req: Request, res: Response) => {
       isRealData: true
     };
 
-    await cache.set(cacheKey, JSON.stringify(result), 300);
+    await cacheSet(cacheKey, JSON.stringify(result), 300);
 
-    return res.json(success(result, 'Real category stats retrieved'));
+    return sendSuccess(res, result);
   } catch (err) {
     logger.error('Error fetching category stats:', err);
-    return res.status(500).json(error('Failed to fetch category stats'));
+    return sendError(res, 'Failed to fetch category stats', 'فشل في جلب إحصائيات الفئات', 500);
   }
 };
 
@@ -398,9 +398,9 @@ export const getCategoryStats = async (_req: Request, res: Response) => {
 export const getSourceStats = async (_req: Request, res: Response) => {
   try {
     const cacheKey = 'stats:sources:real';
-    const cached = await cache.get(cacheKey);
+    const cached = await cacheGet<string>(cacheKey);
     if (cached) {
-      return res.json(success(JSON.parse(cached), 'Source stats from cache'));
+      return sendSuccess(res, JSON.parse(cached));
     }
 
     // Get dataset counts by source
@@ -424,12 +424,12 @@ export const getSourceStats = async (_req: Request, res: Response) => {
       isRealData: true
     };
 
-    await cache.set(cacheKey, JSON.stringify(result), 300);
+    await cacheSet(cacheKey, JSON.stringify(result), 300);
 
-    return res.json(success(result, 'Real source stats retrieved'));
+    return sendSuccess(res, result);
   } catch (err) {
     logger.error('Error fetching source stats:', err);
-    return res.status(500).json(error('Failed to fetch source stats'));
+    return sendError(res, 'Failed to fetch source stats', 'فشل في جلب إحصائيات المصادر', 500);
   }
 };
 
