@@ -144,12 +144,13 @@ export async function getCategories(
     });
 
     const categories = [
-      { id: 'all', label: 'الكل', labelEn: 'All', count: categoryCounts.reduce((sum, c) => sum + c._count.id, 0) },
+      { id: 'all', label: 'الكل', labelEn: 'All', count: categoryCounts.reduce((sum, c) => sum + c._count.id, 0), filterValue: 'all' },
       ...categoryCounts.map(c => ({
         id: CATEGORY_MAP[c.category]?.id || 'other',
-        label: CATEGORY_MAP[c.category]?.label || c.category,
+        label: c.category, // Use actual DB category name as label
         labelEn: CATEGORY_MAP[c.category]?.labelEn || c.category,
         count: c._count.id,
+        filterValue: c.category, // Original DB category for filtering
       })),
     ];
 
