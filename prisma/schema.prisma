@@ -157,6 +157,12 @@ model Dataset {
   // Resources - روابط الملفات (CSV, Excel, JSON)
   resources     Json      @default("[]") @map("resources")
 
+  // Metadata - البيانات الوصفية الكاملة من المصدر
+  metadata      Json?     @map("metadata")
+
+  // Data URL - رابط البيانات المباشر
+  dataUrl       String?   @map("data_url")
+
   // Sync info
   lastSyncAt    DateTime? @map("last_sync_at")
   syncStatus    String    @default("PENDING") @map("sync_status")
