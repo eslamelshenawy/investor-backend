@@ -218,7 +218,9 @@ export async function triggerAnalysis(
       summary: result.summary,
       summaryAr: result.summaryAr,
       dataSource: 'REAL_DATA_ANALYSIS',
-    }, 'Analysis completed with real data', 'تم إكمال التحليل من بيانات حقيقية');
+      message: 'Analysis completed with real data',
+      messageAr: 'تم إكمال التحليل من بيانات حقيقية',
+    });
   } catch (error) {
     console.error('[triggerAnalysis] Error:', error);
     next(error);
