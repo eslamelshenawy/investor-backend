@@ -41,7 +41,11 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
-  // Log the error
+  // Log the error with full details
+  console.error('[ErrorHandler] Full error:', err);
+  console.error('[ErrorHandler] Error name:', err.name);
+  console.error('[ErrorHandler] Error message:', err.message);
+  console.error('[ErrorHandler] Error stack:', err.stack);
   logger.error('Error:', err);
 
   // Handle Zod validation errors
@@ -95,12 +99,13 @@ export function errorHandler(
     }
   }
 
-  // Default error response
+  // Default error response - temporarily showing full error for debugging
   res.status(500).json({
     success: false,
-    error: config.isDev ? err.message : 'Internal server error',
-    errorAr: config.isDev ? err.message : 'خطأ داخلي في الخادم',
-    ...(config.isDev && { stack: err.stack }),
+    error: err.message || 'Internal server error',
+    errorAr: err.message || 'خطأ داخلي في الخادم',
+    errorName: err.name,
+    stack: err.stack?.split('\n').slice(0, 5),
   });
 }
 
