@@ -66,15 +66,18 @@ export async function getDashboards(
       ];
     }
 
-    // Filter by category
+    // Filter by category - supports both category ID and category label
     if (category && category !== 'all') {
-      // Find all category names that map to this category ID
+      // First check if it's a category ID from CATEGORY_MAP
       const matchingCategories = Object.entries(CATEGORY_MAP)
         .filter(([_, value]) => value.id === category)
         .map(([key, _]) => key);
 
       if (matchingCategories.length > 0) {
         where.category = { in: matchingCategories };
+      } else {
+        // Otherwise treat it as the actual category label from database
+        where.category = category as string;
       }
     }
 
