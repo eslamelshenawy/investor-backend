@@ -102,6 +102,24 @@ export async function generateRealSignals(): Promise<AnalysisResult> {
       _count: { id: true },
     });
 
+    // 6. جلب القطاعات ذات البيانات القليلة (للمخاطر)
+    const lowDataCategories = categoryStats.filter(c => c._count.id < 10);
+
+    // 7. جلب datasets التي فشلت مزامنتها
+    const failedSync = syncStats.find(s => s.syncStatus === 'FAILED');
+    const pendingSync = syncStats.find(s => s.syncStatus === 'PENDING');
+
+    // 8. جلب datasets القديمة (لم تُحدث منذ شهر)
+    const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const outdatedDatasets = await prisma.dataset.count({
+      where: {
+        OR: [
+          { lastSyncAt: { lt: oneMonthAgo } },
+          { lastSyncAt: null },
+        ],
+      },
+    });
+
     // ═══════════════════════════════════════════════════════════════
     // توليد الإشارات
     // ═══════════════════════════════════════════════════════════════
@@ -253,6 +271,93 @@ export async function generateRealSignals(): Promise<AnalysisResult> {
         indicators: {
           datasetCount: secondCategory._count.id,
           category: secondCategory.category,
+        },
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // إشارات المخاطر (RISK Signals)
+    // ═══════════════════════════════════════════════════════════════
+
+    // إشارة مخاطر 1: البيانات القديمة
+    if (outdatedDatasets > 0) {
+      const outdatedPercent = Math.round((outdatedDatasets / totalDatasets) * 100);
+      signals.push({
+        type: 'RISK',
+        title: `${outdatedDatasets.toLocaleString()} Datasets Need Refresh`,
+        titleAr: `${outdatedDatasets.toLocaleString()} مجموعة بيانات تحتاج تحديث`,
+        summary: `${outdatedPercent}% of datasets (${outdatedDatasets.toLocaleString()}) haven't been updated in over 30 days. Outdated data may lead to inaccurate investment decisions.`,
+        summaryAr: `${outdatedPercent}% من مجموعات البيانات (${outdatedDatasets.toLocaleString()}) لم يتم تحديثها منذ أكثر من 30 يوم. البيانات القديمة قد تؤدي لقرارات استثمارية غير دقيقة.`,
+        impactScore: Math.min(80, 50 + outdatedPercent),
+        confidence: 95,
+        trend: 'DOWN',
+        region: 'National',
+        relatedDatasets: [],
+        indicators: {
+          outdatedCount: outdatedDatasets,
+          totalDatasets: totalDatasets,
+          outdatedPercent: outdatedPercent,
+        },
+      });
+    }
+
+    // إشارة مخاطر 2: فشل المزامنة
+    if (failedSync && failedSync._count.id > 0) {
+      signals.push({
+        type: 'RISK',
+        title: `${failedSync._count.id} Datasets Failed to Sync`,
+        titleAr: `${failedSync._count.id} مجموعة بيانات فشلت في المزامنة`,
+        summary: `${failedSync._count.id} datasets failed synchronization with the Saudi Open Data Portal. This may affect data completeness and accuracy for certain sectors.`,
+        summaryAr: `${failedSync._count.id} مجموعة بيانات فشلت في المزامنة مع البوابة الوطنية للبيانات المفتوحة. هذا قد يؤثر على اكتمال ودقة البيانات في بعض القطاعات.`,
+        impactScore: Math.min(75, 40 + failedSync._count.id * 2),
+        confidence: 100,
+        trend: 'DOWN',
+        region: 'National',
+        relatedDatasets: [],
+        indicators: {
+          failedCount: failedSync._count.id,
+          syncStatus: 'FAILED',
+        },
+      });
+    }
+
+    // إشارة مخاطر 3: قطاعات ذات بيانات محدودة
+    if (lowDataCategories.length > 0) {
+      const lowDataSectors = lowDataCategories.slice(0, 3).map(c => c.category);
+      signals.push({
+        type: 'RISK',
+        title: `${lowDataCategories.length} Sectors Have Limited Data`,
+        titleAr: `${lowDataCategories.length} قطاع لديه بيانات محدودة`,
+        summary: `${lowDataCategories.length} sectors have fewer than 10 datasets each, including: ${lowDataSectors.join(', ')}. Limited data increases investment analysis uncertainty.`,
+        summaryAr: `${lowDataCategories.length} قطاع لديه أقل من 10 مجموعات بيانات، منها: ${lowDataSectors.join('، ')}. البيانات المحدودة تزيد من عدم اليقين في التحليل الاستثماري.`,
+        impactScore: Math.min(70, 35 + lowDataCategories.length * 3),
+        confidence: 90,
+        trend: 'STABLE',
+        region: 'National',
+        relatedDatasets: [],
+        indicators: {
+          lowDataSectorsCount: lowDataCategories.length,
+          affectedSectors: lowDataSectors,
+        },
+      });
+    }
+
+    // إشارة مخاطر 4: بيانات معلقة
+    if (pendingSync && pendingSync._count.id > 100) {
+      signals.push({
+        type: 'RISK',
+        title: `${pendingSync._count.id.toLocaleString()} Datasets Pending Sync`,
+        titleAr: `${pendingSync._count.id.toLocaleString()} مجموعة بيانات في انتظار المزامنة`,
+        summary: `A large number of datasets (${pendingSync._count.id.toLocaleString()}) are waiting to be synchronized. Recent market data may not be fully reflected in current analysis.`,
+        summaryAr: `عدد كبير من مجموعات البيانات (${pendingSync._count.id.toLocaleString()}) في انتظار المزامنة. بيانات السوق الحديثة قد لا تنعكس بالكامل في التحليل الحالي.`,
+        impactScore: 65,
+        confidence: 100,
+        trend: 'STABLE',
+        region: 'National',
+        relatedDatasets: [],
+        indicators: {
+          pendingCount: pendingSync._count.id,
+          syncStatus: 'PENDING',
         },
       });
     }
