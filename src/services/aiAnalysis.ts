@@ -1,11 +1,13 @@
 /**
  * AI Analysis Service - خدمة تحليل الذكاء الاصطناعي
  * Uses OpenAI API for analyzing economic data and generating signals
+ * NO MOCK DATA - All data must be real
  */
 
 import { config } from '../config/index.js';
 import { prisma } from './database.js';
 import { logger } from '../utils/logger.js';
+import { generateRealSignals } from './realSignalGenerator.js';
 
 // OpenAI API Configuration
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
@@ -141,8 +143,9 @@ export async function analyzeDatasets(): Promise<AnalysisResult | null> {
     const response = await callOpenAI(prompt);
 
     if (!response) {
-      // Return mock data if Gemini is not available
-      return generateMockAnalysis();
+      // NO MOCK DATA - Use real signal generator instead
+      logger.warn('OpenAI unavailable, falling back to real data analysis');
+      return generateRealSignals();
     }
 
     // Parse response
@@ -241,95 +244,13 @@ function parseAnalysisResponse(response: string): AnalysisResult {
     };
   } catch (error) {
     logger.error('Error parsing AI response:', error);
-    return generateMockAnalysis();
+    // NO MOCK DATA - return null to trigger real data analysis
+    return null as unknown as AnalysisResult;
   }
 }
 
-/**
- * Generate mock analysis when AI is not available
- */
-function generateMockAnalysis(): AnalysisResult {
-  const now = new Date();
-
-  return {
-    signals: [
-      {
-        type: 'OPPORTUNITY',
-        title: 'Growing Real Estate Investment Opportunity in Riyadh',
-        titleAr: 'فرصة استثمارية متنامية في العقارات بالرياض',
-        summary: 'Real estate permits in Riyadh increased by 15% in Q4, indicating strong market growth.',
-        summaryAr: 'ارتفعت تصاريح البناء في الرياض بنسبة 15% في الربع الرابع، مما يشير إلى نمو قوي في السوق.',
-        impactScore: 78,
-        confidence: 85,
-        trend: 'UP',
-        region: 'Riyadh',
-        sector: 'Real Estate',
-        relatedDatasets: ['building-permits', 'real-estate-index'],
-        indicators: { quarterlyGrowth: 15, yearlyGrowth: 23 },
-      },
-      {
-        type: 'TREND',
-        title: 'Tourism Sector Shows Strong Recovery',
-        titleAr: 'قطاع السياحة يظهر تعافياً قوياً',
-        summary: 'Tourist arrivals exceeded pre-pandemic levels with 12M visitors in 2024.',
-        summaryAr: 'تجاوز عدد الزوار مستويات ما قبل الجائحة مع 12 مليون زائر في 2024.',
-        impactScore: 82,
-        confidence: 90,
-        trend: 'UP',
-        region: 'National',
-        sector: 'Tourism',
-        relatedDatasets: ['tourism-stats', 'hotel-occupancy'],
-        indicators: { visitors: 12000000, growthRate: 28 },
-      },
-      {
-        type: 'RISK',
-        title: 'Rising Inflation in Food Sector',
-        titleAr: 'ارتفاع التضخم في قطاع الغذاء',
-        summary: 'Food prices increased 4.2% YoY, potentially affecting consumer spending.',
-        summaryAr: 'ارتفعت أسعار الغذاء 4.2% سنوياً، مما قد يؤثر على إنفاق المستهلكين.',
-        impactScore: 65,
-        confidence: 88,
-        trend: 'UP',
-        region: 'National',
-        sector: 'Consumer',
-        relatedDatasets: ['cpi-index', 'food-prices'],
-        indicators: { inflationRate: 4.2, monthlyChange: 0.3 },
-      },
-      {
-        type: 'ALERT',
-        title: 'New Business Regulations Coming into Effect',
-        titleAr: 'أنظمة تجارية جديدة تدخل حيز التنفيذ',
-        summary: 'New SME support regulations will reduce licensing requirements by 30%.',
-        summaryAr: 'ستقلل الأنظمة الجديدة لدعم المنشآت الصغيرة والمتوسطة متطلبات الترخيص بنسبة 30%.',
-        impactScore: 70,
-        confidence: 95,
-        trend: 'STABLE',
-        region: 'National',
-        sector: 'Business',
-        relatedDatasets: ['business-licenses', 'sme-data'],
-        indicators: { reductionPercent: 30 },
-      },
-    ],
-    insights: [
-      {
-        title: 'Vision 2030 Progress Accelerating',
-        titleAr: 'تسارع تقدم رؤية 2030',
-        description: 'Key economic indicators show Saudi Arabia is on track to meet Vision 2030 goals.',
-        descriptionAr: 'تظهر المؤشرات الاقتصادية الرئيسية أن المملكة العربية السعودية على المسار الصحيح لتحقيق أهداف رؤية 2030.',
-        category: 'Economic Policy',
-      },
-      {
-        title: 'Digital Transformation Leading Growth',
-        titleAr: 'التحول الرقمي يقود النمو',
-        description: 'Tech sector investments increased 45% as digital transformation accelerates.',
-        descriptionAr: 'ارتفعت استثمارات قطاع التقنية بنسبة 45% مع تسارع التحول الرقمي.',
-        category: 'Technology',
-      },
-    ],
-    summary: 'The Saudi economy shows strong growth momentum with real estate, tourism, and technology sectors leading. Some inflationary pressures in consumer goods warrant monitoring.',
-    summaryAr: 'يُظهر الاقتصاد السعودي زخماً قوياً للنمو مع قيادة قطاعات العقارات والسياحة والتقنية. بعض الضغوط التضخمية في السلع الاستهلاكية تستدعي المتابعة.',
-  };
-}
+// REMOVED: generateMockAnalysis - NO FAKE DATA ALLOWED
+// All signals must come from real data analysis
 
 /**
  * Save signals to database

@@ -3,6 +3,7 @@ import { prisma } from '../services/database.js';
 import { cacheGet, cacheSet, CacheKeys } from '../services/cache.js';
 import { sendSuccess, sendPaginated, sendError } from '../utils/response.js';
 import { analyzeDatasets, generateDailySummary, analyzeDataset } from '../services/aiAnalysis.js';
+import { generateAndSaveRealSignals } from '../services/realSignalGenerator.js';
 
 // Get all signals
 export async function getSignals(
@@ -186,17 +187,23 @@ export async function getSignalStats(
   }
 }
 
-// Trigger AI analysis (admin only)
+// Trigger AI analysis (admin only) - NO MOCK DATA
 export async function triggerAnalysis(
   _req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    const result = await analyzeDatasets();
+    // Try OpenAI first
+    let result = await analyzeDatasets();
 
-    if (!result) {
-      sendError(res, 'Analysis failed', 'فشل التحليل', 500);
+    // If OpenAI fails, use real data analysis (NO MOCK DATA)
+    if (!result || result.signals.length === 0) {
+      result = await generateAndSaveRealSignals();
+    }
+
+    if (!result || result.signals.length === 0) {
+      sendError(res, 'No data available for analysis', 'لا توجد بيانات متاحة للتحليل', 404);
       return;
     }
 
@@ -205,7 +212,8 @@ export async function triggerAnalysis(
       insightsGenerated: result.insights.length,
       summary: result.summary,
       summaryAr: result.summaryAr,
-    }, 'Analysis completed', 'تم إكمال التحليل');
+      dataSource: 'REAL_DATA_ANALYSIS',
+    }, 'Analysis completed with real data', 'تم إكمال التحليل من بيانات حقيقية');
   } catch (error) {
     next(error);
   }

@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { syncAllDatasets } from '../services/saudiDataSync.js';
 import { syncAllDatasets as syncFromPortal } from '../services/datasetSync.js';
 import { analyzeDatasets, generateDailySummary } from '../services/aiAnalysis.js';
+import { generateAndSaveRealSignals } from '../services/realSignalGenerator.js';
 import { generateMarketReport, createGeneratedContent } from '../services/contentGeneration.js';
 import { findNewDatasets, addNewDatasets, SAUDI_DATA_CATEGORIES } from '../services/discovery.js';
 import { preFetchTopDatasets } from '../services/dataPreFetch.js';
@@ -114,7 +115,7 @@ export function scheduleQuickCheck() {
   logger.info('📅 Scheduled: Quick check (every hour)');
 }
 
-// AI Analysis - every 6 hours (30 */6 * * *)
+// AI Analysis - every 6 hours (30 */6 * * *) - NO MOCK DATA
 export function scheduleAIAnalysis() {
   cron.schedule('30 */6 * * *', async () => {
     if (jobStatus.aiAnalysis.running) {
@@ -123,15 +124,21 @@ export function scheduleAIAnalysis() {
     }
 
     jobStatus.aiAnalysis.running = true;
-    logger.info('⏰ Scheduled: AI analysis starting');
+    logger.info('⏰ Scheduled: AI analysis starting (REAL DATA ONLY)');
 
     try {
-      // Analyze datasets and generate signals
-      const result = await analyzeDatasets();
+      // Try OpenAI first
+      let result = await analyzeDatasets();
 
-      if (result) {
+      // If OpenAI fails, use real data analysis (NO MOCK DATA)
+      if (!result || result.signals.length === 0) {
+        logger.info('⏰ OpenAI unavailable, generating signals from real data...');
+        result = await generateAndSaveRealSignals();
+      }
+
+      if (result && result.signals.length > 0) {
         jobStatus.aiAnalysis.signalsGenerated = result.signals.length;
-        logger.info(`⏰ AI analysis completed: ${result.signals.length} signals generated`);
+        logger.info(`⏰ AI analysis completed: ${result.signals.length} REAL signals generated`);
 
         // Generate daily summary
         const summary = await generateDailySummary();
@@ -139,7 +146,7 @@ export function scheduleAIAnalysis() {
           logger.info('⏰ Daily summary generated');
         }
       } else {
-        logger.info('⏰ AI analysis completed: No new signals');
+        logger.info('⏰ AI analysis completed: No data available for analysis');
       }
     } catch (error) {
       logger.error('⏰ AI analysis failed:', error);
@@ -149,7 +156,7 @@ export function scheduleAIAnalysis() {
     }
   });
 
-  logger.info('📅 Scheduled: AI Analysis (every 6 hours, offset 30min)');
+  logger.info('📅 Scheduled: AI Analysis (every 6 hours, offset 30min) - REAL DATA ONLY');
 }
 
 // Content Generation - daily at 6 AM (0 6 * * *)
@@ -403,7 +410,15 @@ export async function triggerAIAnalysis() {
   jobStatus.aiAnalysis.running = true;
 
   try {
-    const result = await analyzeDatasets();
+    // Try OpenAI first
+    let result = await analyzeDatasets();
+
+    // If OpenAI fails, use real data analysis (NO MOCK DATA)
+    if (!result || result.signals.length === 0) {
+      logger.info('OpenAI unavailable, generating signals from real data...');
+      result = await generateAndSaveRealSignals();
+    }
+
     if (result) {
       jobStatus.aiAnalysis.signalsGenerated = result.signals.length;
     }

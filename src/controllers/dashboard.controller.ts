@@ -54,10 +54,8 @@ export async function getDashboards(
       isActive: true,
       // Only real datasets with valid externalId (UUID format)
       externalId: { contains: '-' },
-      // Exclude placeholder names - only show datasets with real names
-      NOT: {
-        nameAr: { startsWith: 'مجموعة بيانات' }
-      }
+      // Only datasets with metadata (real data)
+      metadata: { not: null }
     };
 
     // Filter by search
@@ -146,8 +144,8 @@ export async function getCategories(
       where: {
         isActive: true,
         externalId: { contains: '-' },
-        // Exclude placeholder names
-        NOT: { nameAr: { startsWith: 'مجموعة بيانات' } }
+        // Only datasets with metadata
+        metadata: { not: null }
       },
       _count: { id: true },
     });
