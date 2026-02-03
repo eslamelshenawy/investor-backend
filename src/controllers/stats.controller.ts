@@ -296,7 +296,7 @@ export const getRecentActivity = async (_req: Request, res: Response) => {
  */
 export const getUserStats = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).user?.userId;
 
     if (!userId) {
       return sendError(res, 'Not authenticated', 'غير مسجل دخول', 401);
