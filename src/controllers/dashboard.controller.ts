@@ -1,92 +1,44 @@
 /**
  * Dashboard Controller - وحدة تحكم اللوحات
+ * كل البيانات حقيقية من قاعدة البيانات - بدون أي بيانات وهمية
  */
 
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../services/database.js';
 import { sendSuccess, sendPaginated } from '../utils/response.js';
 
-// Dashboard categories
-const DASHBOARD_CATEGORIES = [
-  { id: 'all', label: 'الكل', labelEn: 'All' },
-  { id: 'economy', label: 'الاقتصاد الكلي', labelEn: 'Economy' },
-  { id: 'energy', label: 'الطاقة والتعدين', labelEn: 'Energy & Mining' },
-  { id: 'real_estate', label: 'العقار والإسكان', labelEn: 'Real Estate' },
-  { id: 'investment', label: 'الاستثمار', labelEn: 'Investment' },
-  { id: 'labor', label: 'سوق العمل', labelEn: 'Labor Market' },
-  { id: 'tourism', label: 'السياحة', labelEn: 'Tourism' },
-  { id: 'technology', label: 'التقنية', labelEn: 'Technology' },
-];
+// Dashboard categories mapped from real database categories
+const CATEGORY_MAP: Record<string, { id: string; label: string; labelEn: string }> = {
+  'الميزانية': { id: 'budget', label: 'الميزانية', labelEn: 'Budget' },
+  'الاقتصاد': { id: 'economy', label: 'الاقتصاد', labelEn: 'Economy' },
+  'العقار': { id: 'real_estate', label: 'العقار', labelEn: 'Real Estate' },
+  'الاستثمار': { id: 'investment', label: 'الاستثمار', labelEn: 'Investment' },
+  'الطاقة': { id: 'energy', label: 'الطاقة', labelEn: 'Energy' },
+  'سوق العمل': { id: 'labor', label: 'سوق العمل', labelEn: 'Labor Market' },
+  'السياحة': { id: 'tourism', label: 'السياحة', labelEn: 'Tourism' },
+  'التقنية': { id: 'technology', label: 'التقنية', labelEn: 'Technology' },
+  'تقنية المعلومات': { id: 'technology', label: 'تقنية المعلومات', labelEn: 'IT' },
+  'الحكومة الإلكترونية': { id: 'egovernment', label: 'الحكومة الإلكترونية', labelEn: 'E-Government' },
+  'خدمة العملاء': { id: 'customer_service', label: 'خدمة العملاء', labelEn: 'Customer Service' },
+  'أخرى': { id: 'other', label: 'أخرى', labelEn: 'Other' },
+};
 
-// Generate dashboards from datasets
-async function generateDashboardsFromDatasets() {
-  const datasets = await prisma.dataset.findMany({
-    where: {
-      isActive: true,
-      // Real datasets have UUID format IDs (contain hyphen)
-      // Old auto-generated ones have CUID format (no hyphen)
-      id: { contains: '-' }
-    },
-    orderBy: { lastSyncAt: 'desc' },
-  });
+// Color based on category (deterministic, not random)
+const CATEGORY_COLORS: Record<string, string> = {
+  'budget': 'blue',
+  'economy': 'green',
+  'real_estate': 'purple',
+  'investment': 'amber',
+  'energy': 'rose',
+  'labor': 'cyan',
+  'tourism': 'indigo',
+  'technology': 'teal',
+  'egovernment': 'blue',
+  'customer_service': 'green',
+  'other': 'gray',
+};
 
-  const categoryMap: Record<string, string> = {
-    'عقارات': 'real_estate',
-    'تمويل': 'investment',
-    'استثمار': 'investment',
-    'إحصائيات': 'economy',
-    'قانونية': 'economy',
-  };
-
-  const colors = ['blue', 'green', 'purple', 'amber', 'rose', 'cyan', 'indigo', 'teal'];
-  const dataFreqs = ['daily', 'monthly', 'quarterly', 'yearly'];
-
-  return datasets.map((dataset, index) => ({
-    id: `dash_${dataset.id}`,
-    name: dataset.nameAr || dataset.name,
-    nameEn: dataset.name,
-    description: dataset.descriptionAr || dataset.description || `لوحة بيانات ${dataset.nameAr}`,
-    category: categoryMap[dataset.category] || 'economy',
-    source: 'البيانات المفتوحة السعودية',
-    widgets: [],
-    views: Math.floor(Math.random() * 50000) + 1000,
-    lastUpdated: dataset.lastSyncAt ? formatTimeAgo(dataset.lastSyncAt) : 'غير محدث',
-    isFavorite: false,
-    color: colors[index % colors.length],
-    trend: Math.floor(Math.random() * 30) - 5,
-    keyMetrics: generateKeyMetrics(dataset.category),
-    dataFreq: dataFreqs[Math.floor(Math.random() * dataFreqs.length)],
-    datasetId: dataset.id,
-    recordCount: dataset.recordCount || 0,
-    syncStatus: dataset.syncStatus,
-  }));
-}
-
-function formatTimeAgo(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffHours < 1) return 'منذ دقائق';
-  if (diffHours < 24) return `منذ ${diffHours} ساعة`;
-  if (diffDays === 1) return 'منذ يوم';
-  if (diffDays < 7) return `منذ ${diffDays} أيام`;
-  return `منذ ${Math.floor(diffDays / 7)} أسبوع`;
-}
-
-function generateKeyMetrics(category: string): string[] {
-  const metricsMap: Record<string, string[]> = {
-    'عقارات': ['عدد الصفقات', 'متوسط السعر', 'مؤشر النمو'],
-    'تمويل': ['حجم التمويل', 'عدد المستفيدين', 'نسبة النمو'],
-    'استثمار': ['حجم الاستثمار', 'عدد المشاريع', 'العائد'],
-    'إحصائيات': ['المؤشر العام', 'نسبة التغير', 'المتوسط'],
-    'قانونية': ['عدد القرارات', 'نسبة التنفيذ', 'المدة'],
-  };
-  return metricsMap[category] || ['المؤشر الرئيسي', 'نسبة التغير', 'الإجمالي'];
-}
-
-// Get all official dashboards
+// Get all official dashboards - ALL DATA FROM DATABASE
 export async function getDashboards(
   req: Request,
   res: Response,
@@ -97,47 +49,114 @@ export async function getDashboards(
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
 
-    let dashboards = await generateDashboardsFromDatasets();
-
-    // Filter by category
-    if (category && category !== 'all') {
-      dashboards = dashboards.filter(d => d.category === category);
-    }
+    // Build where clause
+    const where: any = {
+      isActive: true,
+      // Only real datasets with UUID format
+      id: { contains: '-' }
+    };
 
     // Filter by search
     if (search) {
-      const searchLower = (search as string).toLowerCase();
-      dashboards = dashboards.filter(d =>
-        d.name.toLowerCase().includes(searchLower) ||
-        d.description.toLowerCase().includes(searchLower)
-      );
+      where.OR = [
+        { name: { contains: search as string, mode: 'insensitive' } },
+        { nameAr: { contains: search as string, mode: 'insensitive' } },
+        { description: { contains: search as string, mode: 'insensitive' } },
+        { descriptionAr: { contains: search as string, mode: 'insensitive' } },
+      ];
     }
 
-    // Paginate
-    const total = dashboards.length;
-    const startIndex = (pageNum - 1) * limitNum;
-    const paginatedDashboards = dashboards.slice(startIndex, startIndex + limitNum);
+    // Filter by category
+    if (category && category !== 'all') {
+      // Find all category names that map to this category ID
+      const matchingCategories = Object.entries(CATEGORY_MAP)
+        .filter(([_, value]) => value.id === category)
+        .map(([key, _]) => key);
 
-    sendPaginated(res, paginatedDashboards, pageNum, limitNum, total);
+      if (matchingCategories.length > 0) {
+        where.category = { in: matchingCategories };
+      }
+    }
+
+    // Get total count
+    const total = await prisma.dataset.count({ where });
+
+    // Get paginated datasets
+    const datasets = await prisma.dataset.findMany({
+      where,
+      orderBy: { lastSyncAt: 'desc' },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+    });
+
+    // Transform to dashboard format - ALL REAL DATA
+    const dashboards = datasets.map((dataset) => {
+      const categoryInfo = CATEGORY_MAP[dataset.category] || CATEGORY_MAP['أخرى'];
+      const columns = JSON.parse(dataset.columns || '[]');
+
+      return {
+        id: `dash_${dataset.id}`,
+        name: dataset.nameAr || dataset.name,
+        nameEn: dataset.name,
+        description: dataset.descriptionAr || dataset.description || '',
+        category: categoryInfo.id,
+        categoryLabel: categoryInfo.label,
+        source: dataset.source,
+        sourceUrl: dataset.sourceUrl,
+        color: CATEGORY_COLORS[categoryInfo.id] || 'blue',
+        // REAL DATA - no random values
+        recordCount: dataset.recordCount,
+        columns: columns,
+        syncStatus: dataset.syncStatus,
+        lastSyncAt: dataset.lastSyncAt,
+        lastUpdated: dataset.lastSyncAt ? formatDate(dataset.lastSyncAt) : null,
+        createdAt: dataset.createdAt,
+        updatedAt: dataset.updatedAt,
+        datasetId: dataset.id,
+        externalId: dataset.externalId,
+      };
+    });
+
+    sendPaginated(res, dashboards, pageNum, limitNum, total);
   } catch (error) {
     next(error);
   }
 }
 
-// Get dashboard categories
+// Get dashboard categories from actual database
 export async function getCategories(
   _req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    sendSuccess(res, DASHBOARD_CATEGORIES);
+    // Get unique categories from database
+    const categoryCounts = await prisma.dataset.groupBy({
+      by: ['category'],
+      where: {
+        isActive: true,
+        id: { contains: '-' }
+      },
+      _count: { id: true },
+    });
+
+    const categories = [
+      { id: 'all', label: 'الكل', labelEn: 'All', count: categoryCounts.reduce((sum, c) => sum + c._count.id, 0) },
+      ...categoryCounts.map(c => ({
+        id: CATEGORY_MAP[c.category]?.id || 'other',
+        label: CATEGORY_MAP[c.category]?.label || c.category,
+        labelEn: CATEGORY_MAP[c.category]?.labelEn || c.category,
+        count: c._count.id,
+      })),
+    ];
+
+    sendSuccess(res, categories);
   } catch (error) {
     next(error);
   }
 }
 
-// Get single dashboard with widgets
+// Get single dashboard with REAL data
 export async function getDashboard(
   req: Request,
   res: Response,
@@ -146,10 +165,15 @@ export async function getDashboard(
   try {
     const { id } = req.params;
 
-    const dashboards = await generateDashboardsFromDatasets();
-    const dashboard = dashboards.find(d => d.id === id);
+    // Extract dataset ID from dashboard ID
+    const datasetId = id.startsWith('dash_') ? id.replace('dash_', '') : id;
 
-    if (!dashboard) {
+    // Get dataset from database
+    const dataset = await prisma.dataset.findUnique({
+      where: { id: datasetId },
+    });
+
+    if (!dataset) {
       res.status(404).json({
         success: false,
         error: 'Dashboard not found',
@@ -158,36 +182,53 @@ export async function getDashboard(
       return;
     }
 
-    // Generate widgets for this dashboard
-    const widgets = generateWidgetsForDashboard(dashboard);
+    const categoryInfo = CATEGORY_MAP[dataset.category] || CATEGORY_MAP['أخرى'];
+    const columns = JSON.parse(dataset.columns || '[]');
+    const dataPreview = JSON.parse(dataset.dataPreview || '[]');
+    const resources = typeof dataset.resources === 'string'
+      ? JSON.parse(dataset.resources)
+      : dataset.resources;
 
-    sendSuccess(res, { ...dashboard, widgets });
+    // Build response with ALL REAL DATA
+    const dashboard = {
+      id: `dash_${dataset.id}`,
+      name: dataset.nameAr || dataset.name,
+      nameEn: dataset.name,
+      description: dataset.descriptionAr || dataset.description || '',
+      category: categoryInfo.id,
+      categoryLabel: categoryInfo.label,
+      source: dataset.source,
+      sourceUrl: dataset.sourceUrl,
+      color: CATEGORY_COLORS[categoryInfo.id] || 'blue',
+      // REAL DATA
+      recordCount: dataset.recordCount,
+      columns: columns,
+      dataPreview: dataPreview,
+      resources: resources,
+      syncStatus: dataset.syncStatus,
+      lastSyncAt: dataset.lastSyncAt,
+      lastUpdated: dataset.lastSyncAt ? formatDate(dataset.lastSyncAt) : null,
+      createdAt: dataset.createdAt,
+      updatedAt: dataset.updatedAt,
+      datasetId: dataset.id,
+      externalId: dataset.externalId,
+    };
+
+    sendSuccess(res, dashboard);
   } catch (error) {
     next(error);
   }
 }
 
-function generateWidgetsForDashboard(dashboard: any) {
-  const widgetTypes = ['metric', 'chart', 'table', 'trend'];
-  const chartTypes = ['bar', 'line', 'pie', 'area'];
-
-  return dashboard.keyMetrics.map((metric: string, index: number) => ({
-    id: `widget_${dashboard.id}_${index}`,
-    title: metric,
-    type: widgetTypes[index % widgetTypes.length],
-    chartType: chartTypes[index % chartTypes.length],
-    value: Math.floor(Math.random() * 10000),
-    change: Math.floor(Math.random() * 40) - 20,
-    data: generateChartData(),
-  }));
-}
-
-function generateChartData() {
-  const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو'];
-  return months.map(month => ({
-    name: month,
-    value: Math.floor(Math.random() * 1000) + 100,
-  }));
+// Format date to Arabic
+function formatDate(date: Date): string {
+  return new Intl.DateTimeFormat('ar-SA', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 }
 
 export default {
