@@ -178,6 +178,12 @@ export async function analyzeDatasets(): Promise<AnalysisResult | null> {
     // Parse response
     const analysis = parseAnalysisResponse(response);
 
+    // If parsing failed, fallback to real data analysis
+    if (!analysis || !analysis.signals) {
+      logger.warn('Failed to parse OpenAI response, falling back to real data analysis');
+      return generateRealSignals();
+    }
+
     // Save signals to database
     await saveSignals(analysis.signals);
 
