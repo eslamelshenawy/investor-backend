@@ -459,15 +459,13 @@ export async function generateAndSaveRealSignals(): Promise<AnalysisResult> {
   const result = await generateRealSignals();
 
   if (result.signals.length > 0) {
-    // حذف الإشارات القديمة من REAL_DATA_ANALYSIS
-    await prisma.signal.deleteMany({
+    // حذف كل الإشارات القديمة من REAL_DATA_ANALYSIS لتجنب التكرار
+    const deleted = await prisma.signal.deleteMany({
       where: {
         dataSource: 'REAL_DATA_ANALYSIS',
-        createdAt: {
-          lt: new Date(Date.now() - 24 * 60 * 60 * 1000), // أقدم من 24 ساعة
-        },
       },
     });
+    logger.info(`Deleted ${deleted.count} old REAL_DATA_ANALYSIS signals`);
 
     await saveRealSignals(result.signals);
   }
