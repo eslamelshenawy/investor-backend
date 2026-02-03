@@ -201,9 +201,15 @@ export async function getTimeline(
           updatedAt: true,
         },
       }),
-      // Sync Logs - Recent sync activities
+      // Sync Logs - Only show syncs that actually did something (not empty syncs)
       prisma.syncLog.findMany({
-        where: { status: 'SUCCESS' },
+        where: {
+          status: 'SUCCESS',
+          OR: [
+            { newRecords: { gt: 0 } },
+            { updatedRecords: { gt: 0 } },
+          ],
+        },
         skip: Math.floor(skip / 4),
         take: itemsPerSource,
         orderBy: { startedAt: 'desc' },
@@ -230,7 +236,15 @@ export async function getTimeline(
         },
       }),
       prisma.dataset.count({ where: { isActive: true } }),
-      prisma.syncLog.count({ where: { status: 'SUCCESS' } }),
+      prisma.syncLog.count({
+        where: {
+          status: 'SUCCESS',
+          OR: [
+            { newRecords: { gt: 0 } },
+            { updatedRecords: { gt: 0 } },
+          ],
+        },
+      }),
     ]);
 
     // Transform and combine all sources
