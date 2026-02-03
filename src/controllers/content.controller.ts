@@ -120,7 +120,7 @@ export async function getContent(
   }
 }
 
-// Get timeline (all content types mixed)
+// Get timeline (all content types mixed) - Dynamic from Database
 export async function getTimeline(
   req: Request,
   res: Response,
@@ -133,12 +133,16 @@ export async function getTimeline(
     const limitNum = parseInt(limit as string, 10);
     const skip = (pageNum - 1) * limitNum;
 
-    // Get both content and signals
-    const [content, signals, totalContent, totalSignals] = await Promise.all([
+    // Calculate how many items to fetch from each source
+    const itemsPerSource = Math.ceil(limitNum / 4);
+
+    // Get data from multiple sources: Content, Signals, Datasets, SyncLogs
+    const [content, signals, datasets, syncLogs, totalContent, totalSignals, totalDatasets, totalSyncLogs] = await Promise.all([
+      // Content
       prisma.content.findMany({
         where: { status: 'PUBLISHED' },
-        skip: Math.floor(skip / 2),
-        take: Math.floor(limitNum / 2),
+        skip: Math.floor(skip / 4),
+        take: itemsPerSource,
         orderBy: { publishedAt: 'desc' },
         select: {
           id: true,
@@ -151,6 +155,7 @@ export async function getTimeline(
           publishedAt: true,
         },
       }),
+      // Signals
       prisma.signal.findMany({
         where: {
           isActive: true,
@@ -159,8 +164,8 @@ export async function getTimeline(
             { expiresAt: { gt: new Date() } },
           ],
         },
-        skip: Math.floor(skip / 2),
-        take: Math.ceil(limitNum / 2),
+        skip: Math.floor(skip / 4),
+        take: itemsPerSource,
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
@@ -174,6 +179,46 @@ export async function getTimeline(
           createdAt: true,
         },
       }),
+      // Datasets - Recently updated/added
+      prisma.dataset.findMany({
+        where: { isActive: true },
+        skip: Math.floor(skip / 4),
+        take: itemsPerSource,
+        orderBy: { updatedAt: 'desc' },
+        select: {
+          id: true,
+          externalId: true,
+          name: true,
+          nameAr: true,
+          description: true,
+          descriptionAr: true,
+          category: true,
+          source: true,
+          recordCount: true,
+          syncStatus: true,
+          lastSyncAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      // Sync Logs - Recent sync activities
+      prisma.syncLog.findMany({
+        where: { status: 'SUCCESS' },
+        skip: Math.floor(skip / 4),
+        take: itemsPerSource,
+        orderBy: { startedAt: 'desc' },
+        select: {
+          id: true,
+          jobType: true,
+          status: true,
+          recordsCount: true,
+          newRecords: true,
+          updatedRecords: true,
+          startedAt: true,
+          completedAt: true,
+        },
+      }),
+      // Counts
       prisma.content.count({ where: { status: 'PUBLISHED' } }),
       prisma.signal.count({
         where: {
@@ -184,28 +229,95 @@ export async function getTimeline(
           ],
         },
       }),
+      prisma.dataset.count({ where: { isActive: true } }),
+      prisma.syncLog.count({ where: { status: 'SUCCESS' } }),
     ]);
 
-    // Combine and sort by date
+    // Transform and combine all sources
     const timeline = [
+      // Content items
       ...content.map((c) => ({
-        ...c,
+        id: c.id,
+        type: c.type,
+        title: c.title,
+        titleAr: c.titleAr,
+        excerpt: c.excerpt,
+        excerptAr: c.excerptAr,
+        tags: c.tags,
         itemType: 'content' as const,
         date: c.publishedAt,
       })),
+      // Signal items
       ...signals.map((s) => ({
-        ...s,
+        id: s.id,
+        type: s.type,
+        title: s.title,
+        titleAr: s.titleAr,
+        summary: s.summary,
+        summaryAr: s.summaryAr,
+        impactScore: s.impactScore,
+        trend: s.trend,
         itemType: 'signal' as const,
         date: s.createdAt,
       })),
+      // Dataset items - transformed to timeline events
+      ...datasets.map((d) => {
+        const isNew = d.createdAt && d.updatedAt &&
+          (d.updatedAt.getTime() - d.createdAt.getTime()) < 60000; // Created within 1 minute
+        return {
+          id: d.id,
+          type: isNew ? 'NEW_DATA' : 'UPDATE',
+          title: `${isNew ? 'New Dataset' : 'Dataset Updated'}: ${d.name}`,
+          titleAr: `${isNew ? 'بيانات جديدة' : 'تحديث بيانات'}: ${d.nameAr}`,
+          summary: d.description || `Dataset from ${d.source}`,
+          summaryAr: d.descriptionAr || `بيانات من ${d.source}`,
+          impactScore: Math.min(100, 50 + Math.floor(d.recordCount / 100)),
+          trend: 'UP',
+          tags: JSON.stringify([d.category, d.source]),
+          itemType: 'dataset' as const,
+          date: d.updatedAt,
+          category: d.category,
+          recordCount: d.recordCount,
+          externalId: d.externalId,
+        };
+      }),
+      // Sync Log items - transformed to timeline events
+      ...syncLogs.map((s) => ({
+        id: s.id,
+        type: 'SYNC',
+        title: `Data Sync: ${s.jobType.replace(/_/g, ' ')}`,
+        titleAr: `مزامنة البيانات: ${getArabicJobType(s.jobType)}`,
+        summary: `Synced ${s.recordsCount} records (${s.newRecords} new, ${s.updatedRecords} updated)`,
+        summaryAr: `تمت مزامنة ${s.recordsCount} سجل (${s.newRecords} جديد، ${s.updatedRecords} محدث)`,
+        impactScore: Math.min(100, 40 + s.newRecords),
+        trend: s.newRecords > 0 ? 'UP' : 'NEUTRAL',
+        itemType: 'sync' as const,
+        date: s.startedAt,
+        recordsCount: s.recordsCount,
+        newRecords: s.newRecords,
+        updatedRecords: s.updatedRecords,
+      })),
     ].sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
 
-    const total = totalContent + totalSignals;
+    const total = totalContent + totalSignals + totalDatasets + totalSyncLogs;
 
     sendPaginated(res, timeline, pageNum, limitNum, total);
   } catch (error) {
     next(error);
   }
+}
+
+// Helper function to translate job types to Arabic
+function getArabicJobType(jobType: string): string {
+  const translations: Record<string, string> = {
+    'FULL_DATASET_SYNC': 'مزامنة كاملة للبيانات',
+    'INCREMENTAL_SYNC': 'مزامنة تدريجية',
+    'METADATA_SYNC': 'مزامنة البيانات الوصفية',
+    'RESOURCE_SYNC': 'مزامنة الموارد',
+    'PORTAL_SYNC': 'مزامنة البوابة',
+    'DAILY_SYNC': 'المزامنة اليومية',
+  };
+  return translations[jobType] || jobType.replace(/_/g, ' ');
 }
 
 // Get content types with counts
