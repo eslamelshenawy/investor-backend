@@ -49,9 +49,11 @@ export async function getDashboards(
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
 
-    // Build where clause - show all active datasets
+    // Build where clause
     const where: any = {
-      isActive: true
+      isActive: true,
+      // Only real datasets with UUID format
+      id: { contains: '-' }
     };
 
     // Filter by search
@@ -135,7 +137,8 @@ export async function getCategories(
     const categoryCounts = await prisma.dataset.groupBy({
       by: ['category'],
       where: {
-        isActive: true
+        isActive: true,
+        id: { contains: '-' }
       },
       _count: { id: true },
     });
