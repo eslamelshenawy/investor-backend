@@ -10,7 +10,7 @@ import Papa from 'papaparse';
 import { cacheGet, cacheSet, CacheKeys } from './cache.js';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
-import prisma from '../config/database.js';
+import { prisma } from './database.js';
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
