@@ -53,7 +53,11 @@ export async function getDashboards(
     const where: any = {
       isActive: true,
       // Only real datasets with valid externalId (UUID format)
-      externalId: { contains: '-' }
+      externalId: { contains: '-' },
+      // Exclude placeholder names - only show datasets with real names
+      NOT: {
+        nameAr: { startsWith: 'مجموعة بيانات' }
+      }
     };
 
     // Filter by search
@@ -84,10 +88,13 @@ export async function getDashboards(
     // Get total count
     const total = await prisma.dataset.count({ where });
 
-    // Get paginated datasets
+    // Get paginated datasets - order by updatedAt to show most recently updated first
     const datasets = await prisma.dataset.findMany({
       where,
-      orderBy: { lastSyncAt: 'desc' },
+      orderBy: [
+        { updatedAt: 'desc' },
+        { createdAt: 'desc' }
+      ],
       skip: (pageNum - 1) * limitNum,
       take: limitNum,
     });
@@ -138,7 +145,9 @@ export async function getCategories(
       by: ['category'],
       where: {
         isActive: true,
-        externalId: { contains: '-' }
+        externalId: { contains: '-' },
+        // Exclude placeholder names
+        NOT: { nameAr: { startsWith: 'مجموعة بيانات' } }
       },
       _count: { id: true },
     });
