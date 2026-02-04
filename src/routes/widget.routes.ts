@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   getWidgets,
+  getWidgetsStream,
   getWidget,
   getWidgetCategories,
   getWidgetTypes
@@ -10,6 +11,7 @@ const router = Router();
 
 // Public routes
 router.get('/', getWidgets);
+router.get('/stream', getWidgetsStream);
 router.get('/categories', getWidgetCategories);
 router.get('/types', getWidgetTypes);
 router.get('/:id', getWidget);

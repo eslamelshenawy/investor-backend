@@ -286,6 +286,91 @@ export const getWidgetCategories = async (_req: Request, res: Response) => {
 };
 
 /**
+ * Stream widgets (WebFlux-style SSE)
+ * Streams widgets progressively for better UX in Expert Studio
+ */
+export const getWidgetsStream = async (req: Request, res: Response) => {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const { category, search, type } = req.query;
+
+  const sendEvent = (event: string, data: any) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    let widgets = await generateWidgetsFromDatasets();
+
+    // Filter by category
+    if (category && category !== 'ALL' && category !== 'all') {
+      widgets = widgets.filter(w => w.category === category);
+    }
+
+    // Filter by atomic type
+    if (type) {
+      widgets = widgets.filter(w => w.atomicType === type);
+    }
+
+    // Search filter
+    if (search) {
+      const searchLower = (search as string).toLowerCase();
+      widgets = widgets.filter(w =>
+        w.title.toLowerCase().includes(searchLower) ||
+        w.description.toLowerCase().includes(searchLower) ||
+        w.category.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Calculate category stats
+    const categoryStats: Record<string, number> = {};
+    const typeStats: Record<string, number> = {};
+    widgets.forEach(w => {
+      categoryStats[w.category] = (categoryStats[w.category] || 0) + 1;
+      typeStats[w.atomicType] = (typeStats[w.atomicType] || 0) + 1;
+    });
+
+    // Send initial metadata
+    sendEvent('meta', {
+      total: widgets.length,
+      categories: CATEGORIES.map(c => ({
+        ...c,
+        count: categoryStats[c.id] || 0
+      })),
+      typeStats
+    });
+
+    // Stream widgets in batches for smoother UX
+    const batchSize = 5;
+    for (let i = 0; i < widgets.length; i += batchSize) {
+      const batch = widgets.slice(i, i + batchSize);
+
+      for (const widget of batch) {
+        sendEvent('widget', widget);
+      }
+
+      // Small delay between batches
+      if (i + batchSize < widgets.length) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+
+    // Signal completion
+    sendEvent('complete', { count: widgets.length });
+    res.end();
+  } catch (error) {
+    console.error('Error streaming widgets:', error);
+    sendEvent('error', { message: 'فشل في جلب المؤشرات' });
+    res.end();
+  }
+};
+
+/**
  * Get widget types
  */
 export const getWidgetTypes = async (_req: Request, res: Response) => {
