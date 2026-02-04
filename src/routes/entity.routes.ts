@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   getEntities,
+  getEntitiesStream,
   getEntity,
   getEntityTypes,
   toggleFollowEntity,
@@ -12,6 +13,7 @@ const router = Router();
 
 // Public routes
 router.get('/', getEntities);
+router.get('/stream', getEntitiesStream);
 router.get('/types', getEntityTypes);
 router.get('/:id', getEntity);
 
