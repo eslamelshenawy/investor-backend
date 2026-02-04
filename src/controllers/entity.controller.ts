@@ -309,11 +309,16 @@ export const getEntities = async (req: Request, res: Response) => {
       );
     }
 
-    // Get dataset counts from actual database
-    const datasets = await prisma.dataset.findMany({ where: { isActive: true } });
+    // Get dataset counts using COUNT queries (memory efficient)
+    const totalCount = await prisma.dataset.count({ where: { isActive: true } });
+    const categoryCounts = await prisma.dataset.groupBy({
+      by: ['category'],
+      where: { isActive: true },
+      _count: { id: true }
+    });
     const categoryMap: Record<string, number> = {};
-    datasets.forEach(d => {
-      categoryMap[d.category] = (categoryMap[d.category] || 0) + 1;
+    categoryCounts.forEach(c => {
+      categoryMap[c.category] = c._count.id;
     });
 
     // Update entity dataset counts based on category mapping
@@ -321,7 +326,7 @@ export const getEntities = async (req: Request, res: Response) => {
       if (e.type === 'ministry' || e.type === 'authority') {
         // Map entities to dataset categories
         let datasetCount = 0;
-        if (e.id === 'gov_2') datasetCount = datasets.length; // GASTAT - all datasets
+        if (e.id === 'gov_2') datasetCount = totalCount; // GASTAT - all datasets
         else if (e.id === 'gov_8') datasetCount = categoryMap['real_estate'] || 0;
         else if (e.id === 'gov_6') datasetCount = categoryMap['energy'] || 0;
         else if (e.id === 'gov_7') datasetCount = categoryMap['labor'] || 0;
@@ -533,14 +538,18 @@ export const getEntitiesStream = async (req: Request, res: Response) => {
       experts: entities.filter(e => e.type === 'expert' || e.type === 'analyst').length
     });
 
-    // Get dataset counts from database
+    // Get dataset counts using COUNT queries (memory efficient)
     let categoryMap: Record<string, number> = {};
     let totalDatasets = 0;
     try {
-      const datasets = await prisma.dataset.findMany({ where: { isActive: true } });
-      totalDatasets = datasets.length;
-      datasets.forEach(d => {
-        categoryMap[d.category] = (categoryMap[d.category] || 0) + 1;
+      totalDatasets = await prisma.dataset.count({ where: { isActive: true } });
+      const categoryCounts = await prisma.dataset.groupBy({
+        by: ['category'],
+        where: { isActive: true },
+        _count: { id: true }
+      });
+      categoryCounts.forEach(c => {
+        categoryMap[c.category] = c._count.id;
       });
     } catch (dbError) {
       console.log('Database not available, using mock counts');

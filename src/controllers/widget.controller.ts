@@ -1,6 +1,7 @@
 /**
  * Widget Controller - التحكم بالمؤشرات الذكية
  * Provides API for dashboard widgets/indicators
+ * Memory-optimized for Railway free tier (512MB limit)
  */
 
 import { Request, Response } from 'express';
@@ -42,188 +43,106 @@ const CATEGORIES = [
 const ATOMIC_TYPES: AtomicWidgetType[] = ['metric', 'sparkline', 'progress', 'donut', 'status', 'gauge'];
 
 /**
- * Generate widgets dynamically from datasets
+ * Convert a dataset to a widget (pure function, no DB call)
  */
-async function generateWidgetsFromDatasets(): Promise<Widget[]> {
-  const datasets = await prisma.dataset.findMany({ where: { isActive: true } });
-  const signals = await prisma.signal.findMany({ take: 20, orderBy: { createdAt: 'desc' } });
+function datasetToWidget(dataset: any, index: number): Widget {
+  const atomicType = ATOMIC_TYPES[index % ATOMIC_TYPES.length];
+  const trend = Math.floor(Math.random() * 30) - 10;
+  const value = dataset.recordCount || Math.floor(Math.random() * 10000);
 
-  const widgets: Widget[] = [];
-
-  // Generate widgets from datasets
-  datasets.forEach((dataset, index) => {
-    const atomicType = ATOMIC_TYPES[index % ATOMIC_TYPES.length];
-    const trend = Math.floor(Math.random() * 30) - 10;
-    const value = dataset.recordCount || Math.floor(Math.random() * 10000);
-
-    widgets.push({
-      id: `dataset_${dataset.id}`,
-      title: dataset.nameAr || dataset.name,
-      type: atomicType === 'sparkline' ? 'line' : atomicType === 'donut' ? 'pie' : 'kpi',
-      category: dataset.category,
-      description: dataset.descriptionAr || dataset.description || '',
-      data: [{ name: 'Current', value }],
-      lastRefresh: dataset.lastSyncAt?.toISOString() || new Date().toISOString(),
-      atomicType,
-      atomicMetadata: {
-        trend,
-        target: Math.floor(Math.random() * 100),
-        statusColor: trend > 0 ? 'green' : trend < -5 ? 'red' : 'amber',
-        subLabel: ['شهري', 'سنوي', 'تراكمي', 'ربع سنوي'][index % 4]
-      }
-    });
-
-    // Add secondary widget for larger datasets
-    if (dataset.recordCount > 100) {
-      const secondaryType = ATOMIC_TYPES[(index + 2) % ATOMIC_TYPES.length];
-      widgets.push({
-        id: `dataset_${dataset.id}_secondary`,
-        title: `تحليل ${dataset.nameAr || dataset.name}`,
-        type: 'bar',
-        category: dataset.category,
-        description: `تحليل تفصيلي لـ ${dataset.descriptionAr || dataset.description || ''}`,
-        data: [
-          { name: 'Q1', value: Math.floor(Math.random() * 1000) },
-          { name: 'Q2', value: Math.floor(Math.random() * 1000) },
-          { name: 'Q3', value: Math.floor(Math.random() * 1000) },
-          { name: 'Q4', value: Math.floor(Math.random() * 1000) }
-        ],
-        lastRefresh: new Date().toISOString(),
-        atomicType: secondaryType,
-        atomicMetadata: {
-          trend: Math.floor(Math.random() * 20) - 5,
-          target: Math.floor(Math.random() * 100),
-          statusColor: 'blue',
-          subLabel: 'مقارنة ربعية'
-        }
-      });
+  return {
+    id: `dataset_${dataset.id}`,
+    title: dataset.nameAr || dataset.name,
+    type: atomicType === 'sparkline' ? 'line' : atomicType === 'donut' ? 'pie' : 'kpi',
+    category: dataset.category,
+    description: dataset.descriptionAr || dataset.description || '',
+    data: [{ name: 'Current', value }],
+    lastRefresh: dataset.lastSyncAt?.toISOString() || new Date().toISOString(),
+    atomicType,
+    atomicMetadata: {
+      trend,
+      target: Math.floor(Math.random() * 100),
+      statusColor: trend > 0 ? 'green' : trend < -5 ? 'red' : 'amber',
+      subLabel: ['شهري', 'سنوي', 'تراكمي', 'ربع سنوي'][index % 4]
     }
-  });
-
-  // Generate widgets from signals
-  signals.forEach((signal, index) => {
-    const atomicType = ATOMIC_TYPES[(index + 3) % ATOMIC_TYPES.length];
-    widgets.push({
-      id: `signal_${signal.id}`,
-      title: signal.titleAr || signal.title,
-      type: atomicType === 'status' ? 'kpi' : 'line',
-      category: signal.type,
-      description: signal.summaryAr || signal.summary,
-      data: [{ name: 'Impact', value: signal.impactScore * 10 }],
-      lastRefresh: signal.createdAt.toISOString(),
-      atomicType,
-      atomicMetadata: {
-        trend: signal.trend === 'up' ? 15 : signal.trend === 'down' ? -12 : 0,
-        target: signal.confidence,
-        statusColor: signal.trend === 'up' ? 'green' : signal.trend === 'down' ? 'red' : 'amber',
-        subLabel: signal.trend === 'up' ? 'صاعد' : signal.trend === 'down' ? 'هابط' : 'مستقر'
-      }
-    });
-  });
-
-  // Add supplementary widgets to reach 60+
-  const supplementaryWidgets = generateSupplementaryWidgets(widgets.length);
-  widgets.push(...supplementaryWidgets);
-
-  return widgets;
+  };
 }
 
 /**
- * Generate supplementary widgets to ensure variety
+ * Convert a signal to a widget
  */
-function generateSupplementaryWidgets(currentCount: number): Widget[] {
-  const supplementary: Widget[] = [];
-  const neededCount = Math.max(0, 65 - currentCount);
-
-  const metricNames = [
-    { ar: 'معدل النمو السنوي', en: 'Annual Growth Rate' },
-    { ar: 'مؤشر الأداء الاقتصادي', en: 'Economic Performance Index' },
-    { ar: 'نسبة الاستثمار الأجنبي', en: 'Foreign Investment Ratio' },
-    { ar: 'معدل التضخم', en: 'Inflation Rate' },
-    { ar: 'نسبة البطالة', en: 'Unemployment Rate' },
-    { ar: 'الناتج المحلي الإجمالي', en: 'GDP' },
-    { ar: 'مؤشر ثقة المستثمرين', en: 'Investor Confidence Index' },
-    { ar: 'حجم التجارة الخارجية', en: 'External Trade Volume' },
-    { ar: 'مؤشر أسعار المستهلك', en: 'Consumer Price Index' },
-    { ar: 'نسبة الادخار الوطني', en: 'National Savings Rate' },
-    { ar: 'مؤشر الإنتاج الصناعي', en: 'Industrial Production Index' },
-    { ar: 'حجم الائتمان المصرفي', en: 'Banking Credit Volume' },
-    { ar: 'مؤشر قطاع التجزئة', en: 'Retail Sector Index' },
-    { ar: 'معدل نمو القطاع السياحي', en: 'Tourism Growth Rate' },
-    { ar: 'مؤشر التنافسية العالمية', en: 'Global Competitiveness Index' }
-  ];
-
-  for (let i = 0; i < neededCount; i++) {
-    const category = CATEGORIES[i % CATEGORIES.length];
-    const atomicType = ATOMIC_TYPES[i % ATOMIC_TYPES.length];
-    const metric = metricNames[i % metricNames.length];
-    const trend = Math.floor(Math.random() * 40) - 15;
-    const value = Math.floor(Math.random() * 10000);
-
-    supplementary.push({
-      id: `supp_${i}`,
-      title: `${metric.ar} - ${category.label}`,
-      type: 'kpi',
-      category: category.id,
-      description: `مؤشر ${metric.ar} في قطاع ${category.label}`,
-      data: [{ name: 'Current', value }],
-      lastRefresh: new Date().toISOString(),
-      atomicType,
-      atomicMetadata: {
-        trend,
-        target: Math.floor(Math.random() * 100),
-        statusColor: trend > 0 ? 'green' : trend < -5 ? 'red' : 'amber',
-        subLabel: ['يومي', 'أسبوعي', 'شهري', 'سنوي'][i % 4]
-      }
-    });
-  }
-
-  return supplementary;
+function signalToWidget(signal: any, index: number): Widget {
+  const atomicType = ATOMIC_TYPES[(index + 3) % ATOMIC_TYPES.length];
+  return {
+    id: `signal_${signal.id}`,
+    title: signal.titleAr || signal.title,
+    type: atomicType === 'status' ? 'kpi' : 'line',
+    category: signal.type,
+    description: signal.summaryAr || signal.summary,
+    data: [{ name: 'Impact', value: signal.impactScore * 10 }],
+    lastRefresh: signal.createdAt.toISOString(),
+    atomicType,
+    atomicMetadata: {
+      trend: signal.trend === 'up' ? 15 : signal.trend === 'down' ? -12 : 0,
+      target: signal.confidence,
+      statusColor: signal.trend === 'up' ? 'green' : signal.trend === 'down' ? 'red' : 'amber',
+      subLabel: signal.trend === 'up' ? 'صاعد' : signal.trend === 'down' ? 'هابط' : 'مستقر'
+    }
+  };
 }
 
 /**
  * Get all widgets with filtering and pagination
+ * Uses cursor-based pagination to avoid loading all data
  */
 export const getWidgets = async (req: Request, res: Response) => {
   try {
-    const { category, search, type, page = '1', limit = '100' } = req.query;
+    const { category, search, type, page = '1', limit = '50' } = req.query;
+    const pageNum = parseInt(page as string);
+    const limitNum = Math.min(parseInt(limit as string), 100); // Max 100 per request
+    const skip = (pageNum - 1) * limitNum;
 
-    let widgets = await generateWidgetsFromDatasets();
-
-    // Filter by category
+    // Build where clause
+    const where: any = { isActive: true };
     if (category && category !== 'ALL' && category !== 'all') {
-      widgets = widgets.filter(w => w.category === category);
+      where.category = category;
+    }
+    if (search) {
+      where.OR = [
+        { name: { contains: search as string, mode: 'insensitive' } },
+        { nameAr: { contains: search as string, mode: 'insensitive' } },
+        { category: { contains: search as string, mode: 'insensitive' } }
+      ];
     }
 
-    // Filter by atomic type
+    // Fetch paginated datasets
+    const [datasets, total] = await Promise.all([
+      prisma.dataset.findMany({
+        where,
+        skip,
+        take: limitNum,
+        orderBy: { recordCount: 'desc' },
+        select: { id: true, name: true, nameAr: true, descriptionAr: true, description: true, category: true, recordCount: true, lastSyncAt: true }
+      }),
+      prisma.dataset.count({ where })
+    ]);
+
+    // Convert to widgets
+    let widgets: Widget[] = datasets.map((ds, i) => datasetToWidget(ds, skip + i));
+
+    // Filter by atomic type if specified
     if (type) {
       widgets = widgets.filter(w => w.atomicType === type);
     }
 
-    // Search filter
-    if (search) {
-      const searchLower = (search as string).toLowerCase();
-      widgets = widgets.filter(w =>
-        w.title.toLowerCase().includes(searchLower) ||
-        w.description.toLowerCase().includes(searchLower) ||
-        w.category.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Pagination
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
-    const startIndex = (pageNum - 1) * limitNum;
-    const paginatedWidgets = widgets.slice(startIndex, startIndex + limitNum);
-
     res.json({
       success: true,
-      data: paginatedWidgets,
+      data: widgets,
       meta: {
         page: pageNum,
         limit: limitNum,
-        total: widgets.length,
-        totalPages: Math.ceil(widgets.length / limitNum)
+        total,
+        totalPages: Math.ceil(total / limitNum)
       }
     });
   } catch (error) {
@@ -237,25 +156,155 @@ export const getWidgets = async (req: Request, res: Response) => {
 };
 
 /**
+ * Stream widgets (WebFlux-style SSE)
+ * True streaming - fetches data in batches and streams progressively
+ * Memory efficient - never loads all data at once
+ */
+export const getWidgetsStream = async (req: Request, res: Response) => {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const { category, search, type } = req.query;
+
+  const sendEvent = (event: string, data: any) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    // Build where clause
+    const where: any = { isActive: true };
+    if (category && category !== 'ALL' && category !== 'all') {
+      where.category = category;
+    }
+    if (search) {
+      where.OR = [
+        { name: { contains: search as string, mode: 'insensitive' } },
+        { nameAr: { contains: search as string, mode: 'insensitive' } }
+      ];
+    }
+
+    // Get total count first (cheap query)
+    const total = await prisma.dataset.count({ where });
+
+    // Get category stats
+    const categoryCounts = await prisma.dataset.groupBy({
+      by: ['category'],
+      where: { isActive: true },
+      _count: { id: true }
+    });
+
+    // Send metadata immediately
+    sendEvent('meta', {
+      total,
+      categories: CATEGORIES.map(c => ({
+        ...c,
+        count: categoryCounts.find(cc => cc.category === c.id)?._count.id || 0
+      })),
+      typeStats: {} // Will be calculated as we stream
+    });
+
+    // Stream datasets in batches of 50
+    const BATCH_SIZE = 50;
+    let streamed = 0;
+    let globalIndex = 0;
+
+    while (streamed < total) {
+      // Fetch next batch
+      const datasets = await prisma.dataset.findMany({
+        where,
+        skip: streamed,
+        take: BATCH_SIZE,
+        orderBy: { recordCount: 'desc' },
+        select: { id: true, name: true, nameAr: true, descriptionAr: true, description: true, category: true, recordCount: true, lastSyncAt: true }
+      });
+
+      if (datasets.length === 0) break;
+
+      // Stream each widget in this batch
+      for (const dataset of datasets) {
+        const widget = datasetToWidget(dataset, globalIndex);
+
+        // Filter by type if specified
+        if (!type || widget.atomicType === type) {
+          sendEvent('widget', widget);
+        }
+
+        globalIndex++;
+      }
+
+      streamed += datasets.length;
+
+      // Small delay between batches to avoid overwhelming the client
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+
+    // Stream signals at the end
+    const signals = await prisma.signal.findMany({
+      take: 10,
+      orderBy: { createdAt: 'desc' }
+    });
+
+    for (let i = 0; i < signals.length; i++) {
+      const widget = signalToWidget(signals[i], i);
+      if (!type || widget.atomicType === type) {
+        sendEvent('widget', widget);
+      }
+    }
+
+    // Signal completion
+    sendEvent('complete', { count: globalIndex + signals.length });
+    res.end();
+  } catch (error) {
+    console.error('Error streaming widgets:', error);
+    sendEvent('error', { message: 'فشل في جلب المؤشرات' });
+    res.end();
+  }
+};
+
+/**
  * Get widget by ID
  */
 export const getWidget = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const widgets = await generateWidgetsFromDatasets();
-    const widget = widgets.find(w => w.id === id);
 
-    if (!widget) {
-      return res.status(404).json({
-        success: false,
-        error: 'Widget not found',
-        errorAr: 'المؤشر غير موجود'
+    // Parse the ID to determine type
+    if (id.startsWith('dataset_')) {
+      const datasetId = id.replace('dataset_', '').replace('_secondary', '');
+      const dataset = await prisma.dataset.findUnique({
+        where: { id: datasetId },
+        select: { id: true, name: true, nameAr: true, descriptionAr: true, description: true, category: true, recordCount: true, lastSyncAt: true }
       });
+
+      if (dataset) {
+        return res.json({
+          success: true,
+          data: datasetToWidget(dataset, 0)
+        });
+      }
+    } else if (id.startsWith('signal_')) {
+      const signalId = id.replace('signal_', '');
+      const signal = await prisma.signal.findUnique({
+        where: { id: signalId }
+      });
+
+      if (signal) {
+        return res.json({
+          success: true,
+          data: signalToWidget(signal, 0)
+        });
+      }
     }
 
-    res.json({
-      success: true,
-      data: widget
+    return res.status(404).json({
+      success: false,
+      error: 'Widget not found',
+      errorAr: 'المؤشر غير موجود'
     });
   } catch (error) {
     console.error('Error fetching widget:', error);
@@ -282,91 +331,6 @@ export const getWidgetCategories = async (_req: Request, res: Response) => {
       error: 'Failed to fetch widget categories',
       errorAr: 'فشل في جلب فئات المؤشرات'
     });
-  }
-};
-
-/**
- * Stream widgets (WebFlux-style SSE)
- * Streams widgets progressively for better UX in Expert Studio
- */
-export const getWidgetsStream = async (req: Request, res: Response) => {
-  // Set SSE headers
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
-
-  const { category, search, type } = req.query;
-
-  const sendEvent = (event: string, data: any) => {
-    res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
-
-  try {
-    let widgets = await generateWidgetsFromDatasets();
-
-    // Filter by category
-    if (category && category !== 'ALL' && category !== 'all') {
-      widgets = widgets.filter(w => w.category === category);
-    }
-
-    // Filter by atomic type
-    if (type) {
-      widgets = widgets.filter(w => w.atomicType === type);
-    }
-
-    // Search filter
-    if (search) {
-      const searchLower = (search as string).toLowerCase();
-      widgets = widgets.filter(w =>
-        w.title.toLowerCase().includes(searchLower) ||
-        w.description.toLowerCase().includes(searchLower) ||
-        w.category.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Calculate category stats
-    const categoryStats: Record<string, number> = {};
-    const typeStats: Record<string, number> = {};
-    widgets.forEach(w => {
-      categoryStats[w.category] = (categoryStats[w.category] || 0) + 1;
-      typeStats[w.atomicType] = (typeStats[w.atomicType] || 0) + 1;
-    });
-
-    // Send initial metadata
-    sendEvent('meta', {
-      total: widgets.length,
-      categories: CATEGORIES.map(c => ({
-        ...c,
-        count: categoryStats[c.id] || 0
-      })),
-      typeStats
-    });
-
-    // Stream widgets in batches for smoother UX
-    const batchSize = 5;
-    for (let i = 0; i < widgets.length; i += batchSize) {
-      const batch = widgets.slice(i, i + batchSize);
-
-      for (const widget of batch) {
-        sendEvent('widget', widget);
-      }
-
-      // Small delay between batches
-      if (i + batchSize < widgets.length) {
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-    }
-
-    // Signal completion
-    sendEvent('complete', { count: widgets.length });
-    res.end();
-  } catch (error) {
-    console.error('Error streaming widgets:', error);
-    sendEvent('error', { message: 'فشل في جلب المؤشرات' });
-    res.end();
   }
 };
 
