@@ -90,6 +90,69 @@ export async function getFeed(
   }
 }
 
+// WebFlux-style Feed Stream (Server-Sent Events)
+export async function getFeedStream(
+  req: Request,
+  res: Response,
+  _next: NextFunction
+): Promise<void> {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.flushHeaders();
+
+  const sendEvent = (eventName: string, data: unknown) => {
+    res.write(`event: ${eventName}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const { limit = '50' } = req.query;
+    const limitNum = parseInt(limit as string, 10);
+
+    // Send start event
+    sendEvent('start', { message: 'بدء تحميل المحتوى...', timestamp: new Date() });
+
+    // Stream content items one by one
+    const content = await prisma.content.findMany({
+      where: { status: 'PUBLISHED' },
+      take: limitNum,
+      orderBy: { publishedAt: 'desc' },
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        titleAr: true,
+        excerpt: true,
+        excerptAr: true,
+        tags: true,
+        viewCount: true,
+        publishedAt: true,
+      },
+    });
+
+    // Stream each content item
+    for (const item of content) {
+      sendEvent('content', item);
+      // Small delay for streaming effect
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    // Send completion event
+    sendEvent('complete', {
+      message: 'تم تحميل جميع المحتوى',
+      total: content.length,
+    });
+
+    res.end();
+  } catch (error) {
+    sendEvent('error', { message: 'حدث خطأ في تحميل المحتوى', error: String(error) });
+    res.end();
+  }
+}
+
 // Get single content item
 export async function getContent(
   req: Request,
@@ -906,6 +969,7 @@ export async function saveContent(
 
 export default {
   getFeed,
+  getFeedStream,
   getContent,
   getTimeline,
   getTimelineStream,

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   getFeed,
+  getFeedStream,
   getContent,
   getTimeline,
   getTimelineStream,
@@ -20,6 +21,7 @@ const router = Router();
 
 // Public routes
 router.get('/feed', getFeed);
+router.get('/feed/stream', getFeedStream);
 router.get('/timeline', getTimeline);
 router.get('/timeline/stream', getTimelineStream);
 router.get('/types', getContentTypes);
