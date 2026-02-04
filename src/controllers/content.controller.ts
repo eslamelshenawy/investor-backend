@@ -791,6 +791,156 @@ export async function createContent(
   }
 }
 
+// Like content
+export async function likeContent(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const id = String(req.params.id);
+    const userId = (req as any).user?.id; // From auth middleware if authenticated
+    const sessionId = req.headers['x-session-id'] as string || req.ip;
+
+    // Check if content exists
+    const content = await prisma.content.findUnique({
+      where: { id },
+    });
+
+    if (!content || content.status !== 'PUBLISHED') {
+      sendError(res, 'Content not found', 'المحتوى غير موجود', 404);
+      return;
+    }
+
+    // Check if already liked (by user or session)
+    const existingLike = await prisma.contentLike.findFirst({
+      where: {
+        contentId: id,
+        OR: [
+          ...(userId ? [{ userId }] : []),
+          { sessionId },
+        ],
+      },
+    });
+
+    if (existingLike) {
+      // Unlike - remove the like
+      await prisma.contentLike.delete({
+        where: { id: existingLike.id },
+      });
+
+      // Decrement like count
+      await prisma.content.update({
+        where: { id },
+        data: { likeCount: { decrement: 1 } },
+      });
+
+      sendSuccess(res, { liked: false, likeCount: content.likeCount - 1 }, 'Like removed', 'تم إزالة الإعجاب');
+      return;
+    }
+
+    // Add new like
+    await prisma.contentLike.create({
+      data: {
+        contentId: id,
+        userId: userId || null,
+        sessionId: userId ? null : sessionId,
+      },
+    });
+
+    // Increment like count
+    const updated = await prisma.content.update({
+      where: { id },
+      data: { likeCount: { increment: 1 } },
+    });
+
+    sendSuccess(res, { liked: true, likeCount: updated.likeCount }, 'Content liked', 'تم الإعجاب بالمحتوى');
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Save/Favorite content
+export async function saveContent(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const id = String(req.params.id);
+    const userId = (req as any).user?.id;
+
+    // Check if content exists
+    const content = await prisma.content.findUnique({
+      where: { id },
+    });
+
+    if (!content || content.status !== 'PUBLISHED') {
+      sendError(res, 'Content not found', 'المحتوى غير موجود', 404);
+      return;
+    }
+
+    // For save, we use the Favorite model
+    // If not authenticated, we'll use a session-based approach
+    const sessionId = req.headers['x-session-id'] as string || req.ip || 'anonymous';
+
+    if (userId) {
+      // Check if already saved
+      const existingFavorite = await prisma.favorite.findFirst({
+        where: {
+          userId,
+          itemType: 'content',
+          itemId: id,
+        },
+      });
+
+      if (existingFavorite) {
+        // Unsave - remove the favorite
+        await prisma.favorite.delete({
+          where: { id: existingFavorite.id },
+        });
+
+        // Decrement save count
+        await prisma.content.update({
+          where: { id },
+          data: { saveCount: { decrement: 1 } },
+        });
+
+        sendSuccess(res, { saved: false, saveCount: content.saveCount - 1 }, 'Removed from favorites', 'تمت إزالته من المفضلة');
+        return;
+      }
+
+      // Add to favorites
+      await prisma.favorite.create({
+        data: {
+          userId,
+          itemType: 'content',
+          itemId: id,
+        },
+      });
+
+      // Increment save count
+      const updated = await prisma.content.update({
+        where: { id },
+        data: { saveCount: { increment: 1 } },
+      });
+
+      sendSuccess(res, { saved: true, saveCount: updated.saveCount }, 'Added to favorites', 'تمت الإضافة للمفضلة');
+    } else {
+      // Anonymous save - just toggle the count
+      // In a real app, you'd track this via session/localStorage on frontend
+      const updated = await prisma.content.update({
+        where: { id },
+        data: { saveCount: { increment: 1 } },
+      });
+
+      sendSuccess(res, { saved: true, saveCount: updated.saveCount }, 'Added to favorites', 'تمت الإضافة للمفضلة');
+    }
+  } catch (error) {
+    next(error);
+  }
+}
+
 export default {
   getFeed,
   getContent,
@@ -803,4 +953,6 @@ export default {
   generateReport,
   generateSectorReport,
   createContent,
+  likeContent,
+  saveContent,
 };

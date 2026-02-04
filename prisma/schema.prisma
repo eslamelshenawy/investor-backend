@@ -123,15 +123,40 @@ model Content {
   metadata     String    @default("{}")
   status       String    @default("PUBLISHED")
   viewCount    Int       @default(0) @map("view_count")
+  likeCount    Int       @default(0) @map("like_count")
+  saveCount    Int       @default(0) @map("save_count")
 
   // Relations
   datasetId    String?   @map("dataset_id")
+  likes        ContentLike[]
 
   generatedAt  DateTime  @default(now()) @map("generated_at")
   publishedAt  DateTime? @map("published_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   @@map("content")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// إعجابات المحتوى - Content Likes
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model ContentLike {
+  id        String   @id @default(cuid())
+  contentId String   @map("content_id")
+
+  // Can be null for anonymous likes (tracked by session/IP)
+  userId    String?  @map("user_id")
+  sessionId String?  @map("session_id")
+
+  // Relations
+  content   Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([contentId, userId])
+  @@unique([contentId, sessionId])
+  @@map("content_likes")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

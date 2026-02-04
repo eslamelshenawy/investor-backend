@@ -11,8 +11,10 @@ import {
   generateReport,
   generateSectorReport,
   createContent,
+  likeContent,
+  saveContent,
 } from '../controllers/content.controller.js';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, requireRole, optionalAuth } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -24,6 +26,10 @@ router.get('/types', getContentTypes);
 router.get('/tags', getPopularTags);
 router.get('/trending', getTrending);
 router.get('/:id', getContent);
+
+// Interactive routes (work for both authenticated and anonymous users)
+router.post('/:id/like', optionalAuth, likeContent);
+router.post('/:id/save', optionalAuth, saveContent);
 
 // Protected routes (Admin only)
 router.post('/', authenticate, requireRole('ADMIN'), createContent);
