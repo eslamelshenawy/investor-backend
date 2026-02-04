@@ -321,6 +321,205 @@ export async function getTimeline(
   }
 }
 
+// WebFlux-style Timeline Stream (Server-Sent Events)
+export async function getTimelineStream(
+  req: Request,
+  res: Response,
+  _next: NextFunction
+): Promise<void> {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.flushHeaders();
+
+  const sendEvent = (eventName: string, data: unknown) => {
+    res.write(`event: ${eventName}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const { limit = '50' } = req.query;
+    const limitNum = parseInt(limit as string, 10);
+    const itemsPerSource = Math.ceil(limitNum / 4);
+
+    // Send start event
+    sendEvent('start', { message: 'بدء تحميل البيانات...', timestamp: new Date() });
+
+    // Stream Content items
+    const content = await prisma.content.findMany({
+      where: { status: 'PUBLISHED' },
+      take: itemsPerSource,
+      orderBy: { publishedAt: 'desc' },
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        titleAr: true,
+        excerpt: true,
+        excerptAr: true,
+        tags: true,
+        publishedAt: true,
+      },
+    });
+
+    for (const c of content) {
+      sendEvent('item', {
+        id: c.id,
+        type: c.type,
+        title: c.title,
+        titleAr: c.titleAr,
+        excerpt: c.excerpt,
+        excerptAr: c.excerptAr,
+        tags: c.tags,
+        itemType: 'content',
+        date: c.publishedAt,
+      });
+    }
+    sendEvent('progress', { source: 'content', count: content.length });
+
+    // Stream Signals
+    const signals = await prisma.signal.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ],
+      },
+      take: itemsPerSource,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        titleAr: true,
+        summary: true,
+        summaryAr: true,
+        impactScore: true,
+        trend: true,
+        createdAt: true,
+      },
+    });
+
+    for (const s of signals) {
+      sendEvent('item', {
+        id: s.id,
+        type: s.type,
+        title: s.title,
+        titleAr: s.titleAr,
+        summary: s.summary,
+        summaryAr: s.summaryAr,
+        impactScore: s.impactScore,
+        trend: s.trend,
+        itemType: 'signal',
+        date: s.createdAt,
+      });
+    }
+    sendEvent('progress', { source: 'signals', count: signals.length });
+
+    // Stream Datasets
+    const datasets = await prisma.dataset.findMany({
+      where: { isActive: true },
+      take: itemsPerSource,
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true,
+        externalId: true,
+        name: true,
+        nameAr: true,
+        description: true,
+        descriptionAr: true,
+        category: true,
+        source: true,
+        recordCount: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    for (const d of datasets) {
+      const isNew = d.createdAt && d.updatedAt &&
+        (d.updatedAt.getTime() - d.createdAt.getTime()) < 60000;
+      sendEvent('item', {
+        id: d.id,
+        type: isNew ? 'NEW_DATA' : 'UPDATE',
+        title: `${isNew ? 'New Dataset' : 'Dataset Updated'}: ${d.name}`,
+        titleAr: `${isNew ? 'بيانات جديدة' : 'تحديث بيانات'}: ${d.nameAr}`,
+        summary: d.description || `Dataset from ${d.source}`,
+        summaryAr: d.descriptionAr || `بيانات من ${d.source}`,
+        impactScore: Math.min(100, 50 + Math.floor(d.recordCount / 100)),
+        trend: 'UP',
+        itemType: 'dataset',
+        date: d.updatedAt,
+        category: d.category,
+        recordCount: d.recordCount,
+        externalId: d.externalId,
+      });
+    }
+    sendEvent('progress', { source: 'datasets', count: datasets.length });
+
+    // Stream Sync Logs
+    const syncLogs = await prisma.syncLog.findMany({
+      where: {
+        status: 'SUCCESS',
+        OR: [
+          { newRecords: { gt: 0 } },
+          { updatedRecords: { gt: 0 } },
+        ],
+      },
+      take: itemsPerSource,
+      orderBy: { startedAt: 'desc' },
+      select: {
+        id: true,
+        jobType: true,
+        recordsCount: true,
+        newRecords: true,
+        updatedRecords: true,
+        startedAt: true,
+      },
+    });
+
+    for (const s of syncLogs) {
+      sendEvent('item', {
+        id: s.id,
+        type: 'SYNC',
+        title: `Data Sync: ${s.jobType.replace(/_/g, ' ')}`,
+        titleAr: `مزامنة البيانات: ${getArabicJobType(s.jobType)}`,
+        summary: `Synced ${s.recordsCount} records (${s.newRecords} new, ${s.updatedRecords} updated)`,
+        summaryAr: `تمت مزامنة ${s.recordsCount} سجل (${s.newRecords} جديد، ${s.updatedRecords} محدث)`,
+        impactScore: Math.min(100, 40 + s.newRecords),
+        trend: s.newRecords > 0 ? 'UP' : 'NEUTRAL',
+        itemType: 'sync',
+        date: s.startedAt,
+        recordsCount: s.recordsCount,
+        newRecords: s.newRecords,
+        updatedRecords: s.updatedRecords,
+      });
+    }
+    sendEvent('progress', { source: 'syncLogs', count: syncLogs.length });
+
+    // Send completion event
+    const total = content.length + signals.length + datasets.length + syncLogs.length;
+    sendEvent('complete', {
+      message: 'تم تحميل جميع البيانات',
+      total,
+      sources: {
+        content: content.length,
+        signals: signals.length,
+        datasets: datasets.length,
+        syncLogs: syncLogs.length,
+      },
+    });
+
+    res.end();
+  } catch (error) {
+    sendEvent('error', { message: 'حدث خطأ في تحميل البيانات', error: String(error) });
+    res.end();
+  }
+}
+
 // Helper function to translate job types to Arabic
 function getArabicJobType(jobType: string): string {
   const translations: Record<string, string> = {
@@ -596,6 +795,7 @@ export default {
   getFeed,
   getContent,
   getTimeline,
+  getTimelineStream,
   getContentTypes,
   getPopularTags,
   getTrending,

@@ -3,6 +3,7 @@ import {
   getFeed,
   getContent,
   getTimeline,
+  getTimelineStream,
   getContentTypes,
   getPopularTags,
   getTrending,
@@ -18,6 +19,7 @@ const router = Router();
 // Public routes
 router.get('/feed', getFeed);
 router.get('/timeline', getTimeline);
+router.get('/timeline/stream', getTimelineStream);
 router.get('/types', getContentTypes);
 router.get('/tags', getPopularTags);
 router.get('/trending', getTrending);
