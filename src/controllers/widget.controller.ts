@@ -157,18 +157,20 @@ export const getWidgets = async (req: Request, res: Response) => {
 
 /**
  * Stream widgets (WebFlux-style SSE)
- * True streaming - fetches data in batches and streams progressively
- * Memory efficient - never loads all data at once
+ * Streams a limited page of widgets progressively (default 60)
+ * Supports pagination via ?page=1&limit=60&category=...&search=...
  */
 export const getWidgetsStream = async (req: Request, res: Response) => {
-  // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
-  const { category, search, type } = req.query;
+  const { category, search, type, page = '1', limit = '60' } = req.query;
+  const pageNum = Math.max(1, parseInt(page as string) || 1);
+  const limitNum = Math.min(parseInt(limit as string) || 60, 120);
+  const skip = (pageNum - 1) * limitNum;
 
   const sendEvent = (event: string, data: any) => {
     res.write(`event: ${event}\n`);
@@ -176,7 +178,6 @@ export const getWidgetsStream = async (req: Request, res: Response) => {
   };
 
   try {
-    // Build where clause
     const where: any = { isActive: true };
     if (category && category !== 'ALL' && category !== 'all') {
       where.category = category;
@@ -188,76 +189,67 @@ export const getWidgetsStream = async (req: Request, res: Response) => {
       ];
     }
 
-    // Get total count first (cheap query)
-    const total = await prisma.dataset.count({ where });
+    const [total, categoryCounts] = await Promise.all([
+      prisma.dataset.count({ where }),
+      prisma.dataset.groupBy({
+        by: ['category'],
+        where: { isActive: true },
+        _count: { id: true }
+      })
+    ]);
 
-    // Get category stats
-    const categoryCounts = await prisma.dataset.groupBy({
-      by: ['category'],
-      where: { isActive: true },
-      _count: { id: true }
-    });
+    const totalPages = Math.ceil(total / limitNum);
 
-    // Send metadata immediately
     sendEvent('meta', {
       total,
+      page: pageNum,
+      totalPages,
+      limit: limitNum,
       categories: CATEGORIES.map(c => ({
         ...c,
         count: categoryCounts.find(cc => cc.category === c.id)?._count.id || 0
-      })),
-      typeStats: {} // Will be calculated as we stream
+      }))
     });
 
-    // Stream datasets in batches of 50
-    const BATCH_SIZE = 50;
-    let streamed = 0;
-    let globalIndex = 0;
+    // Fetch only this page of datasets
+    const datasets = await prisma.dataset.findMany({
+      where,
+      skip,
+      take: limitNum,
+      orderBy: { recordCount: 'desc' },
+      select: { id: true, name: true, nameAr: true, descriptionAr: true, description: true, category: true, recordCount: true, lastSyncAt: true }
+    });
 
-    while (streamed < total) {
-      // Fetch next batch
-      const datasets = await prisma.dataset.findMany({
-        where,
-        skip: streamed,
-        take: BATCH_SIZE,
-        orderBy: { recordCount: 'desc' },
-        select: { id: true, name: true, nameAr: true, descriptionAr: true, description: true, category: true, recordCount: true, lastSyncAt: true }
-      });
-
-      if (datasets.length === 0) break;
-
-      // Stream each widget in this batch
-      for (const dataset of datasets) {
-        const widget = datasetToWidget(dataset, globalIndex);
-
-        // Filter by type if specified
+    // Stream widgets with small batches for smooth rendering
+    const BATCH = 10;
+    for (let i = 0; i < datasets.length; i += BATCH) {
+      const batch = datasets.slice(i, i + BATCH);
+      for (let j = 0; j < batch.length; j++) {
+        const widget = datasetToWidget(batch[j], skip + i + j);
         if (!type || widget.atomicType === type) {
           sendEvent('widget', widget);
         }
-
-        globalIndex++;
       }
-
-      streamed += datasets.length;
-
-      // Small delay between batches to avoid overwhelming the client
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-
-    // Stream signals at the end
-    const signals = await prisma.signal.findMany({
-      take: 10,
-      orderBy: { createdAt: 'desc' }
-    });
-
-    for (let i = 0; i < signals.length; i++) {
-      const widget = signalToWidget(signals[i], i);
-      if (!type || widget.atomicType === type) {
-        sendEvent('widget', widget);
+      if (i + BATCH < datasets.length) {
+        await new Promise(resolve => setTimeout(resolve, 5));
       }
     }
 
-    // Signal completion
-    sendEvent('complete', { count: globalIndex + signals.length });
+    // Add signals only on first page
+    if (pageNum === 1) {
+      const signals = await prisma.signal.findMany({
+        take: 6,
+        orderBy: { createdAt: 'desc' }
+      });
+      for (let i = 0; i < signals.length; i++) {
+        const widget = signalToWidget(signals[i], i);
+        if (!type || widget.atomicType === type) {
+          sendEvent('widget', widget);
+        }
+      }
+    }
+
+    sendEvent('complete', { count: datasets.length, page: pageNum, totalPages, total });
     res.end();
   } catch (error) {
     console.error('Error streaming widgets:', error);
