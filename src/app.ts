@@ -10,6 +10,9 @@ import { logger } from './utils/logger.js';
 export function createApp(): Express {
   const app = express();
 
+  // Trust proxy (behind nginx/Plesk reverse proxy)
+  app.set('trust proxy', 1);
+
   // Security middleware
   app.use(helmet());
 
