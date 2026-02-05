@@ -11,6 +11,11 @@ import widgetRoutes from './widget.routes.js';
 import discoveryRoutes from './discovery.routes.js';
 import syncRoutes from './sync.routes.js';
 import statsRoutes from './stats.routes.js';
+import searchRoutes from './search.routes.js';
+import exportRoutes from './export.routes.js';
+import uploadRoutes from './upload.routes.js';
+import dashboardTemplateRoutes from './dashboard-template.routes.js';
+import recommendationRoutes from './recommendation.routes.js';
 
 const router = Router();
 
@@ -36,5 +41,10 @@ router.use('/widgets', widgetRoutes);
 router.use('/discovery', discoveryRoutes);
 router.use('/sync', syncRoutes);
 router.use('/stats', statsRoutes);
+router.use('/search', searchRoutes);
+router.use('/export', exportRoutes);
+router.use('/uploads', uploadRoutes);
+router.use('/dashboard-templates', dashboardTemplateRoutes);
+router.use('/recommendations', recommendationRoutes);
 
 export default router;

@@ -2,6 +2,7 @@ import express, { Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
 import { config } from './config/index.js';
 import routes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
@@ -58,6 +59,9 @@ export function createApp(): Express {
     logger.debug(`${req.method} ${req.path}`);
     next();
   });
+
+  // Serve uploaded files
+  app.use('/api/uploads', express.static(path.resolve('uploads')));
 
   // API routes
   app.use('/api', routes);

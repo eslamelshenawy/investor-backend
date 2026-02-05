@@ -8,12 +8,14 @@ import {
   getDailySummary,
   analyzeDatasetSignals,
   getSignalsDashboard,
+  streamSignals,
 } from '../controllers/signal.controller.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
 // Public routes
+router.get('/stream', streamSignals);
 router.get('/', getSignals);
 router.get('/latest', getLatestSignals);
 router.get('/stats', getSignalStats);

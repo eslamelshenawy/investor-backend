@@ -1,287 +1,44 @@
 /**
  * Entity Controller - التحكم بالجهات والخبراء
- * Provides API for government entities and experts
+ * Now uses Prisma Entity model instead of hardcoded data
  */
 
 import { Request, Response } from 'express';
 import { prisma } from '../services/database.js';
 
-// Entity types and interfaces
-interface Entity {
-  id: string;
-  name: string;
-  nameEn?: string;
-  role: string;
-  type: 'ministry' | 'authority' | 'expert' | 'analyst';
-  location: string;
-  avatar: string;
-  coverImage?: string;
-  isFollowing: boolean;
-  isVerified: boolean;
-  verificationLevel: 'official' | 'verified' | 'none';
-  stats: {
-    followers: string;
-    posts: number;
-    datasets?: number;
-  };
-  specialties: string[];
-  description?: string;
-  website?: string;
-  establishedYear?: string;
-  impact: 'critical' | 'high' | 'medium' | 'low';
+function formatFollowers(count: number): string {
+  if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+  if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
+  return String(count);
 }
 
-// Saudi government entities and experts data
-const ENTITIES_DATA: Entity[] = [
-  {
-    id: 'gov_1',
-    name: 'وزارة الاستثمار',
-    nameEn: 'Ministry of Investment',
-    role: 'جهة حكومية رسمية',
-    type: 'ministry',
-    location: 'الرياض، المملكة العربية السعودية',
-    avatar: 'https://ui-avatars.com/api/?name=MISA&background=0D47A1&color=fff&size=200&bold=true',
-    coverImage: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=400&fit=crop',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'official',
-    stats: { followers: '245K', posts: 1240, datasets: 45 },
-    specialties: ['الاستثمار الأجنبي', 'التراخيص', 'الفرص الاستثمارية', 'المناطق الاقتصادية'],
-    description: 'الجهة المسؤولة عن تنظيم وتطوير بيئة الاستثمار في المملكة وجذب الاستثمارات الأجنبية المباشرة',
-    website: 'misa.gov.sa',
-    establishedYear: '2020',
-    impact: 'critical'
-  },
-  {
-    id: 'gov_2',
-    name: 'الهيئة العامة للإحصاء',
-    nameEn: 'General Authority for Statistics',
-    role: 'جهة حكومية رسمية',
-    type: 'authority',
-    location: 'الرياض، المملكة العربية السعودية',
-    avatar: 'https://ui-avatars.com/api/?name=GASTAT&background=1B5E20&color=fff&size=200&bold=true',
-    coverImage: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&h=400&fit=crop',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'official',
-    stats: { followers: '189K', posts: 2850, datasets: 120 },
-    specialties: ['البيانات الإحصائية', 'المسوحات الوطنية', 'مؤشرات الاقتصاد', 'سوق العمل'],
-    description: 'المصدر الرسمي للبيانات والإحصاءات الوطنية، توفر بيانات دقيقة وموثوقة لدعم اتخاذ القرار',
-    website: 'stats.gov.sa',
-    establishedYear: '1960',
-    impact: 'critical'
-  },
-  {
-    id: 'gov_3',
-    name: 'البنك المركزي السعودي',
-    nameEn: 'Saudi Central Bank (SAMA)',
-    role: 'جهة حكومية رسمية',
-    type: 'authority',
-    location: 'الرياض، المملكة العربية السعودية',
-    avatar: 'https://ui-avatars.com/api/?name=SAMA&background=B71C1C&color=fff&size=200&bold=true',
-    coverImage: 'https://images.unsplash.com/photo-1541354329998-f4d9a9f9297f?w=1200&h=400&fit=crop',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'official',
-    stats: { followers: '312K', posts: 980, datasets: 65 },
-    specialties: ['السياسة النقدية', 'الاستقرار المالي', 'الرقابة المصرفية', 'الاحتياطيات'],
-    description: 'البنك المركزي للمملكة، المسؤول عن السياسة النقدية والرقابة على القطاع المصرفي والمالي',
-    website: 'sama.gov.sa',
-    establishedYear: '1952',
-    impact: 'critical'
-  },
-  {
-    id: 'gov_4',
-    name: 'وزارة التجارة',
-    nameEn: 'Ministry of Commerce',
-    role: 'جهة حكومية رسمية',
-    type: 'ministry',
-    location: 'الرياض، المملكة العربية السعودية',
-    avatar: 'https://ui-avatars.com/api/?name=MC&background=E65100&color=fff&size=200&bold=true',
-    coverImage: 'https://images.unsplash.com/photo-1556740738-b6a63e27c4df?w=1200&h=400&fit=crop',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'official',
-    stats: { followers: '156K', posts: 1560, datasets: 38 },
-    specialties: ['السجلات التجارية', 'حماية المستهلك', 'التجارة الإلكترونية', 'الملكية الفكرية'],
-    description: 'تنظيم وتطوير الأنشطة التجارية وحماية حقوق المستهلكين وتعزيز بيئة الأعمال',
-    website: 'mc.gov.sa',
-    establishedYear: '1954',
-    impact: 'high'
-  },
-  {
-    id: 'gov_5',
-    name: 'هيئة السوق المالية',
-    nameEn: 'Capital Market Authority',
-    role: 'جهة حكومية رسمية',
-    type: 'authority',
-    location: 'الرياض، المملكة العربية السعودية',
-    avatar: 'https://ui-avatars.com/api/?name=CMA&background=4A148C&color=fff&size=200&bold=true',
-    coverImage: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&h=400&fit=crop',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'official',
-    stats: { followers: '198K', posts: 1120, datasets: 52 },
-    specialties: ['سوق الأسهم', 'الشركات المدرجة', 'الإفصاحات', 'الرقابة المالية'],
-    description: 'تنظيم وتطوير السوق المالية السعودية وحماية المستثمرين والمتعاملين',
-    website: 'cma.org.sa',
-    establishedYear: '2003',
-    impact: 'critical'
-  },
-  {
-    id: 'gov_6',
-    name: 'وزارة الطاقة',
-    nameEn: 'Ministry of Energy',
-    role: 'جهة حكومية رسمية',
-    type: 'ministry',
-    location: 'الرياض، المملكة العربية السعودية',
-    avatar: 'https://ui-avatars.com/api/?name=MOE&background=1B5E20&color=fff&size=200&bold=true',
-    coverImage: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=1200&h=400&fit=crop',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'official',
-    stats: { followers: '142K', posts: 890, datasets: 42 },
-    specialties: ['الطاقة المتجددة', 'النفط والغاز', 'الكهرباء', 'الاستدامة'],
-    description: 'تنظيم قطاع الطاقة وتطوير مصادر الطاقة المتجددة وضمان أمن الإمداد',
-    website: 'moenergy.gov.sa',
-    establishedYear: '2019',
-    impact: 'critical'
-  },
-  {
-    id: 'gov_7',
-    name: 'وزارة الموارد البشرية والتنمية الاجتماعية',
-    nameEn: 'Ministry of Human Resources',
-    role: 'جهة حكومية رسمية',
-    type: 'ministry',
-    location: 'الرياض، المملكة العربية السعودية',
-    avatar: 'https://ui-avatars.com/api/?name=HRSD&background=6A1B9A&color=fff&size=200&bold=true',
-    coverImage: 'https://images.unsplash.com/photo-1521791136064-7986c2920216?w=1200&h=400&fit=crop',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'official',
-    stats: { followers: '280K', posts: 1890, datasets: 55 },
-    specialties: ['سوق العمل', 'التوظيف', 'نظام العمل', 'التنمية الاجتماعية'],
-    description: 'تنظيم سوق العمل وتطوير القوى العاملة ودعم برامج التنمية الاجتماعية',
-    website: 'hrsd.gov.sa',
-    establishedYear: '2019',
-    impact: 'critical'
-  },
-  {
-    id: 'gov_8',
-    name: 'الهيئة العامة للعقار',
-    nameEn: 'Real Estate General Authority',
-    role: 'جهة حكومية رسمية',
-    type: 'authority',
-    location: 'الرياض، المملكة العربية السعودية',
-    avatar: 'https://ui-avatars.com/api/?name=REGA&background=00695C&color=fff&size=200&bold=true',
-    coverImage: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=1200&h=400&fit=crop',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'official',
-    stats: { followers: '95K', posts: 680, datasets: 28 },
-    specialties: ['تنظيم القطاع العقاري', 'التراخيص العقارية', 'المؤشرات العقارية', 'الوساطة'],
-    description: 'تنظيم وتطوير القطاع العقاري غير الحكومي ورفع كفاءته وحوكمته',
-    website: 'rega.gov.sa',
-    establishedYear: '2017',
-    impact: 'high'
-  },
-  {
-    id: 'expert_1',
-    name: 'د. خالد بن فهد العثمان',
-    nameEn: 'Dr. Khalid Al-Othman',
-    role: 'خبير اقتصادي - محلل أسواق',
-    type: 'expert',
-    location: 'الرياض، المملكة العربية السعودية',
-    avatar: 'https://i.pravatar.cc/200?u=khalid',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'verified',
-    stats: { followers: '45.2K', posts: 1850 },
-    specialties: ['الاقتصاد الكلي', 'الأسواق المالية', 'رؤية 2030', 'التحليل الاستراتيجي'],
-    description: 'خبير اقتصادي معتمد مع أكثر من 15 عاماً من الخبرة في تحليل الأسواق السعودية والخليجية',
-    impact: 'high'
-  },
-  {
-    id: 'expert_2',
-    name: 'سارة المنصور',
-    nameEn: 'Sarah Al-Mansour',
-    role: 'محللة بيانات عقارية',
-    type: 'analyst',
-    location: 'جدة، المملكة العربية السعودية',
-    avatar: 'https://i.pravatar.cc/200?u=sarah',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'verified',
-    stats: { followers: '28.5K', posts: 920 },
-    specialties: ['السوق العقاري', 'تحليل البيانات', 'التقييم العقاري', 'الاستثمار العقاري'],
-    description: 'متخصصة في تحليل بيانات السوق العقاري السعودي وتقديم رؤى استثمارية دقيقة',
-    impact: 'high'
-  },
-  {
-    id: 'expert_3',
-    name: 'م. عبدالله الجارالله',
-    nameEn: 'Eng. Abdullah Al-Jarallah',
-    role: 'خبير سلاسل الإمداد واللوجستيات',
-    type: 'expert',
-    location: 'الدمام، المملكة العربية السعودية',
-    avatar: 'https://i.pravatar.cc/200?u=abdullah',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'verified',
-    stats: { followers: '32.8K', posts: 1240 },
-    specialties: ['سلاسل الإمداد', 'اللوجستيات', 'التجارة الدولية', 'الموانئ'],
-    description: 'مهندس صناعي متخصص في تحسين سلاسل الإمداد وتطوير الحلول اللوجستية',
-    impact: 'high'
-  },
-  {
-    id: 'analyst_1',
-    name: 'أحمد محمود الشهري',
-    nameEn: 'Ahmed Al-Shehri',
-    role: 'محلل تقني - أسواق المال',
-    type: 'analyst',
-    location: 'الرياض، المملكة العربية السعودية',
-    avatar: 'https://i.pravatar.cc/200?u=ahmed',
-    isFollowing: false,
-    isVerified: false,
-    verificationLevel: 'none',
-    stats: { followers: '18.3K', posts: 2450 },
-    specialties: ['التحليل الفني', 'تاسي', 'العملات الرقمية', 'الأسهم'],
-    description: 'محلل تقني متخصص في أسواق الأسهم السعودية والخليجية',
-    impact: 'medium'
-  },
-  {
-    id: 'expert_4',
-    name: 'د. نورة العتيبي',
-    nameEn: 'Dr. Noura Al-Otaibi',
-    role: 'خبيرة اقتصاد كلي',
-    type: 'expert',
-    location: 'الرياض، المملكة العربية السعودية',
-    avatar: 'https://i.pravatar.cc/200?u=noura',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'verified',
-    stats: { followers: '52.1K', posts: 1680 },
-    specialties: ['الاقتصاد الكلي', 'السياسة المالية', 'التضخم', 'النمو الاقتصادي'],
-    description: 'أستاذة الاقتصاد في جامعة الملك سعود، متخصصة في دراسات الاقتصاد السعودي',
-    impact: 'high'
-  },
-  {
-    id: 'analyst_2',
-    name: 'فهد الدوسري',
-    nameEn: 'Fahad Al-Dosari',
-    role: 'محلل قطاع الطاقة',
-    type: 'analyst',
-    location: 'الظهران، المملكة العربية السعودية',
-    avatar: 'https://i.pravatar.cc/200?u=fahad',
-    isFollowing: false,
-    isVerified: true,
-    verificationLevel: 'verified',
-    stats: { followers: '38.7K', posts: 1120 },
-    specialties: ['أسواق النفط', 'الطاقة المتجددة', 'أوبك', 'تحليل القطاع'],
-    description: 'محلل متخصص في قطاع الطاقة السعودي والعالمي مع خبرة تزيد عن 10 سنوات',
-    impact: 'high'
-  }
-];
+function entityToResponse(entity: any, isFollowing: boolean = false) {
+  return {
+    id: entity.id,
+    name: entity.name,
+    nameEn: entity.nameEn,
+    role: entity.role,
+    type: entity.type,
+    location: entity.location,
+    avatar: entity.avatar,
+    coverImage: entity.coverImage,
+    isFollowing,
+    isVerified: entity.isVerified,
+    verificationLevel: entity.verificationLevel,
+    stats: {
+      followers: formatFollowers(entity.followersCount),
+      posts: entity.postsCount,
+      datasets: entity.datasetsCount,
+    },
+    specialties: typeof entity.specialties === 'string'
+      ? JSON.parse(entity.specialties)
+      : entity.specialties,
+    description: entity.description,
+    website: entity.website,
+    establishedYear: entity.establishedYear,
+    impact: entity.impact,
+  };
+}
 
 /**
  * Get all entities with filtering and pagination
@@ -290,78 +47,67 @@ export const getEntities = async (req: Request, res: Response) => {
   try {
     const { type, search, page = '1', limit = '20' } = req.query;
 
-    let entities = [...ENTITIES_DATA];
-
-    // Filter by type
-    if (type && type !== 'all') {
-      entities = entities.filter(e => e.type === type);
-    }
-
-    // Search filter
-    if (search) {
-      const searchLower = (search as string).toLowerCase();
-      entities = entities.filter(e =>
-        e.name.toLowerCase().includes(searchLower) ||
-        e.nameEn?.toLowerCase().includes(searchLower) ||
-        e.role.toLowerCase().includes(searchLower) ||
-        e.description?.toLowerCase().includes(searchLower) ||
-        e.specialties.some(s => s.toLowerCase().includes(searchLower))
-      );
-    }
-
-    // Get dataset counts using COUNT queries (memory efficient)
-    const totalCount = await prisma.dataset.count({ where: { isActive: true } });
-    const categoryCounts = await prisma.dataset.groupBy({
-      by: ['category'],
-      where: { isActive: true },
-      _count: { id: true }
-    });
-    const categoryMap: Record<string, number> = {};
-    categoryCounts.forEach(c => {
-      categoryMap[c.category] = c._count.id;
-    });
-
-    // Update entity dataset counts based on category mapping
-    entities = entities.map(e => {
-      if (e.type === 'ministry' || e.type === 'authority') {
-        // Map entities to dataset categories
-        let datasetCount = 0;
-        if (e.id === 'gov_2') datasetCount = totalCount; // GASTAT - all datasets
-        else if (e.id === 'gov_8') datasetCount = categoryMap['real_estate'] || 0;
-        else if (e.id === 'gov_6') datasetCount = categoryMap['energy'] || 0;
-        else if (e.id === 'gov_7') datasetCount = categoryMap['labor'] || 0;
-        else datasetCount = Math.floor(Math.random() * 30) + 10;
-
-        return {
-          ...e,
-          stats: { ...e.stats, datasets: datasetCount }
-        };
-      }
-      return e;
-    });
-
-    // Pagination
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
-    const startIndex = (pageNum - 1) * limitNum;
-    const paginatedEntities = entities.slice(startIndex, startIndex + limitNum);
+    const skip = (pageNum - 1) * limitNum;
+
+    const where: any = { isActive: true };
+
+    if (type && type !== 'all') {
+      where.type = type;
+    }
+
+    if (search) {
+      const searchStr = search as string;
+      where.OR = [
+        { name: { contains: searchStr, mode: 'insensitive' } },
+        { nameEn: { contains: searchStr, mode: 'insensitive' } },
+        { role: { contains: searchStr, mode: 'insensitive' } },
+        { description: { contains: searchStr, mode: 'insensitive' } },
+        { specialties: { contains: searchStr, mode: 'insensitive' } },
+      ];
+    }
+
+    const [entities, total] = await Promise.all([
+      prisma.entity.findMany({
+        where,
+        skip,
+        take: limitNum,
+        orderBy: { followersCount: 'desc' },
+      }),
+      prisma.entity.count({ where }),
+    ]);
+
+    // Check follow status if user is authenticated
+    const userId = (req as any).user?.userId;
+    let followedEntityIds: Set<string> = new Set();
+
+    if (userId) {
+      const follows = await prisma.follow.findMany({
+        where: { followerId: userId, followType: 'ENTITY' },
+        select: { followedEntityId: true },
+      });
+      followedEntityIds = new Set(follows.map(f => f.followedEntityId).filter(Boolean) as string[]);
+    }
+
+    const data = entities.map(e => entityToResponse(e, followedEntityIds.has(e.id)));
 
     res.json({
       success: true,
-      data: paginatedEntities,
+      data,
       meta: {
         page: pageNum,
         limit: limitNum,
-        total: entities.length,
-        totalPages: Math.ceil(entities.length / limitNum)
-      }
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
     });
   } catch (error) {
     console.error('Error fetching entities:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch entities',
-      errorAr: 'فشل في جلب الجهات'
+      errorAr: 'فشل في جلب الجهات',
     });
   }
 };
@@ -372,26 +118,38 @@ export const getEntities = async (req: Request, res: Response) => {
 export const getEntity = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const entity = ENTITIES_DATA.find(e => e.id === id);
+    const entity = await prisma.entity.findUnique({
+      where: { id },
+    });
 
-    if (!entity) {
+    if (!entity || !entity.isActive) {
       return res.status(404).json({
         success: false,
         error: 'Entity not found',
-        errorAr: 'الجهة غير موجودة'
+        errorAr: 'الجهة غير موجودة',
       });
+    }
+
+    const userId = (req as any).user?.userId;
+    let isFollowing = false;
+
+    if (userId) {
+      const follow = await prisma.follow.findFirst({
+        where: { followerId: userId, followType: 'ENTITY', followedEntityId: id },
+      });
+      isFollowing = !!follow;
     }
 
     res.json({
       success: true,
-      data: entity
+      data: entityToResponse(entity, isFollowing),
     });
   } catch (error) {
     console.error('Error fetching entity:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch entity',
-      errorAr: 'فشل في جلب الجهة'
+      errorAr: 'فشل في جلب الجهة',
     });
   }
 };
@@ -406,18 +164,18 @@ export const getEntityTypes = async (_req: Request, res: Response) => {
       { id: 'ministry', label: 'وزارات', labelEn: 'Ministries' },
       { id: 'authority', label: 'هيئات', labelEn: 'Authorities' },
       { id: 'expert', label: 'خبراء', labelEn: 'Experts' },
-      { id: 'analyst', label: 'محللون', labelEn: 'Analysts' }
+      { id: 'analyst', label: 'محللون', labelEn: 'Analysts' },
     ];
 
     res.json({
       success: true,
-      data: types
+      data: types,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch entity types',
-      errorAr: 'فشل في جلب أنواع الجهات'
+      errorAr: 'فشل في جلب أنواع الجهات',
     });
   }
 };
@@ -428,58 +186,68 @@ export const getEntityTypes = async (_req: Request, res: Response) => {
 export const toggleFollowEntity = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.id;
+    const userId = (req as any).user?.userId;
 
     if (!userId) {
       return res.status(401).json({
         success: false,
         error: 'Authentication required',
-        errorAr: 'يجب تسجيل الدخول'
+        errorAr: 'يجب تسجيل الدخول',
       });
     }
 
     // Check if entity exists
-    const entity = ENTITIES_DATA.find(e => e.id === id);
+    const entity = await prisma.entity.findUnique({ where: { id } });
     if (!entity) {
       return res.status(404).json({
         success: false,
         error: 'Entity not found',
-        errorAr: 'الجهة غير موجودة'
+        errorAr: 'الجهة غير موجودة',
       });
     }
 
-    // Check if already following
-    const existingFollow = await prisma.favorite.findFirst({
+    // Check if already following using Follow model
+    const existingFollow = await prisma.follow.findFirst({
       where: {
-        userId,
-        itemType: 'entity',
-        itemId: id
-      }
+        followerId: userId,
+        followType: 'ENTITY',
+        followedEntityId: id,
+      },
     });
 
     if (existingFollow) {
       // Unfollow
-      await prisma.favorite.delete({ where: { id: existingFollow.id } });
+      await prisma.follow.delete({ where: { id: existingFollow.id } });
+      // Update counter
+      await prisma.entity.update({
+        where: { id },
+        data: { followersCount: { decrement: 1 } },
+      });
       res.json({
         success: true,
         data: { isFollowing: false },
         message: 'Unfollowed successfully',
-        messageAr: 'تم إلغاء المتابعة'
+        messageAr: 'تم إلغاء المتابعة',
       });
     } else {
       // Follow
-      await prisma.favorite.create({
+      await prisma.follow.create({
         data: {
-          userId,
-          itemType: 'entity',
-          itemId: id
-        }
+          followerId: userId,
+          followType: 'ENTITY',
+          followedEntityId: id,
+        },
+      });
+      // Update counter
+      await prisma.entity.update({
+        where: { id },
+        data: { followersCount: { increment: 1 } },
       });
       res.json({
         success: true,
         data: { isFollowing: true },
         message: 'Followed successfully',
-        messageAr: 'تمت المتابعة'
+        messageAr: 'تمت المتابعة',
       });
     }
   } catch (error) {
@@ -487,17 +255,15 @@ export const toggleFollowEntity = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to toggle follow',
-      errorAr: 'فشل في تحديث المتابعة'
+      errorAr: 'فشل في تحديث المتابعة',
     });
   }
 };
 
 /**
  * Get entities stream (WebFlux-style SSE)
- * Streams entities progressively for better UX
  */
 export const getEntitiesStream = async (req: Request, res: Response) => {
-  // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -512,75 +278,41 @@ export const getEntitiesStream = async (req: Request, res: Response) => {
   };
 
   try {
-    let entities = [...ENTITIES_DATA];
+    const where: any = { isActive: true };
 
-    // Filter by type
     if (type && type !== 'all') {
-      entities = entities.filter(e => e.type === type);
+      where.type = type;
     }
 
-    // Search filter
     if (search) {
-      const searchLower = (search as string).toLowerCase();
-      entities = entities.filter(e =>
-        e.name.toLowerCase().includes(searchLower) ||
-        e.nameEn?.toLowerCase().includes(searchLower) ||
-        e.role.toLowerCase().includes(searchLower) ||
-        e.description?.toLowerCase().includes(searchLower) ||
-        e.specialties.some(s => s.toLowerCase().includes(searchLower))
-      );
+      const searchStr = search as string;
+      where.OR = [
+        { name: { contains: searchStr, mode: 'insensitive' } },
+        { nameEn: { contains: searchStr, mode: 'insensitive' } },
+        { role: { contains: searchStr, mode: 'insensitive' } },
+        { description: { contains: searchStr, mode: 'insensitive' } },
+        { specialties: { contains: searchStr, mode: 'insensitive' } },
+      ];
     }
+
+    const entities = await prisma.entity.findMany({
+      where,
+      orderBy: { followersCount: 'desc' },
+    });
 
     // Send initial metadata
     sendEvent('meta', {
       total: entities.length,
       official: entities.filter(e => e.type === 'ministry' || e.type === 'authority').length,
-      experts: entities.filter(e => e.type === 'expert' || e.type === 'analyst').length
+      experts: entities.filter(e => e.type === 'expert' || e.type === 'analyst').length,
     });
 
-    // Get dataset counts using COUNT queries (memory efficient)
-    let categoryMap: Record<string, number> = {};
-    let totalDatasets = 0;
-    try {
-      totalDatasets = await prisma.dataset.count({ where: { isActive: true } });
-      const categoryCounts = await prisma.dataset.groupBy({
-        by: ['category'],
-        where: { isActive: true },
-        _count: { id: true }
-      });
-      categoryCounts.forEach(c => {
-        categoryMap[c.category] = c._count.id;
-      });
-    } catch (dbError) {
-      console.log('Database not available, using mock counts');
-    }
-
-    // Stream entities one by one with delay for smooth UX
+    // Stream entities one by one
     for (let i = 0; i < entities.length; i++) {
-      let entity = entities[i];
-
-      // Enrich government entities with real dataset counts
-      if (entity.type === 'ministry' || entity.type === 'authority') {
-        let datasetCount = 0;
-        if (entity.id === 'gov_2') datasetCount = totalDatasets; // GASTAT - all datasets
-        else if (entity.id === 'gov_8') datasetCount = categoryMap['real_estate'] || Math.floor(Math.random() * 20) + 5;
-        else if (entity.id === 'gov_6') datasetCount = categoryMap['energy'] || Math.floor(Math.random() * 20) + 5;
-        else if (entity.id === 'gov_7') datasetCount = categoryMap['labor'] || Math.floor(Math.random() * 20) + 5;
-        else datasetCount = Math.floor(Math.random() * 30) + 10;
-
-        entity = {
-          ...entity,
-          stats: { ...entity.stats, datasets: datasetCount }
-        };
-      }
-
-      sendEvent('entity', entity);
-
-      // Small delay between items for smooth progressive loading
+      sendEvent('entity', entityToResponse(entities[i]));
       await new Promise(resolve => setTimeout(resolve, 80));
     }
 
-    // Signal completion
     sendEvent('complete', { count: entities.length });
     res.end();
   } catch (error) {
@@ -595,37 +327,40 @@ export const getEntitiesStream = async (req: Request, res: Response) => {
  */
 export const getFollowedEntities = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).user?.userId;
 
     if (!userId) {
       return res.status(401).json({
         success: false,
         error: 'Authentication required',
-        errorAr: 'يجب تسجيل الدخول'
+        errorAr: 'يجب تسجيل الدخول',
       });
     }
 
-    const follows = await prisma.favorite.findMany({
+    const follows = await prisma.follow.findMany({
       where: {
-        userId,
-        itemType: 'entity'
-      }
+        followerId: userId,
+        followType: 'ENTITY',
+      },
+      include: {
+        followedEntity: true,
+      },
     });
 
-    const followedIds = follows.map(f => f.itemId);
-    const followedEntities = ENTITIES_DATA.filter(e => followedIds.includes(e.id))
-      .map(e => ({ ...e, isFollowing: true }));
+    const followedEntities = follows
+      .filter(f => f.followedEntity)
+      .map(f => entityToResponse(f.followedEntity!, true));
 
     res.json({
       success: true,
-      data: followedEntities
+      data: followedEntities,
     });
   } catch (error) {
     console.error('Error fetching followed entities:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch followed entities',
-      errorAr: 'فشل في جلب الجهات المتابعة'
+      errorAr: 'فشل في جلب الجهات المتابعة',
     });
   }
 };

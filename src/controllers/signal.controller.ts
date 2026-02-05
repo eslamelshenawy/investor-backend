@@ -326,6 +326,74 @@ export async function getSignalsDashboard(
   }
 }
 
+// SSE: Stream signals
+export async function streamSignals(
+  req: Request,
+  res: Response
+): Promise<void> {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const sendEvent = (event: string, data: unknown) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const where: Record<string, unknown> = {
+      isActive: true,
+      OR: [
+        { expiresAt: null },
+        { expiresAt: { gt: new Date() } },
+      ],
+    };
+
+    const total = await prisma.signal.count({ where });
+
+    // Send meta
+    sendEvent('meta', { total });
+
+    // Stream signals in batches
+    const BATCH_SIZE = 50;
+    let streamed = 0;
+
+    while (streamed < total) {
+      const signals = await prisma.signal.findMany({
+        where,
+        skip: streamed,
+        take: BATCH_SIZE,
+        orderBy: [
+          { impactScore: 'desc' },
+          { createdAt: 'desc' },
+        ],
+      });
+
+      if (signals.length === 0) break;
+
+      for (const signal of signals) {
+        sendEvent('signal', signal);
+      }
+
+      streamed += signals.length;
+
+      if (streamed < total) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    }
+
+    sendEvent('complete', { count: streamed });
+    res.end();
+  } catch (error) {
+    console.error('Error streaming signals:', error);
+    sendEvent('error', { message: 'فشل في جلب الإشارات' });
+    res.end();
+  }
+}
+
 export default {
   getSignals,
   getSignal,
@@ -335,4 +403,5 @@ export default {
   getDailySummary,
   analyzeDatasetSignals,
   getSignalsDashboard,
+  streamSignals,
 };

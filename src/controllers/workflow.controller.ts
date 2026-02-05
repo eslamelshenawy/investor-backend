@@ -5,14 +5,40 @@ import { sendSuccess, sendPaginated, sendError } from '../utils/response.js';
 // Valid roles that can create content
 const CREATOR_ROLES = ['WRITER', 'EXPERT', 'ANALYST', 'DESIGNER', 'ADMIN', 'SUPER_ADMIN'];
 
+// All 12 post types
+export const POST_TYPES = {
+  INTRO_INSIGHT:       { id: 'INTRO_INSIGHT',       label: 'رؤية تمهيدية',         labelEn: 'Intro Insight' },
+  QUICK_METRIC:        { id: 'QUICK_METRIC',        label: 'مؤشر سريع',            labelEn: 'Quick Metric' },
+  SIGNAL_POST:         { id: 'SIGNAL_POST',         label: 'إشارة ذكية',           labelEn: 'Signal Post' },
+  COMPARISON:          { id: 'COMPARISON',           label: 'مقارنة رقمية',         labelEn: 'Comparison' },
+  CHART_GRAPH:         { id: 'CHART_GRAPH',          label: 'تحليل بصري',           labelEn: 'Chart/Graph' },
+  VISUAL_CONTEXT:      { id: 'VISUAL_CONTEXT',       label: 'صورة تحليلية',         labelEn: 'Visual Context' },
+  AI_SUMMARY:          { id: 'AI_SUMMARY',           label: 'ملخص ذكاء اصطناعي',    labelEn: 'AI Summary' },
+  PROGRESS_DIST:       { id: 'PROGRESS_DIST',        label: 'شريط توزيع',           labelEn: 'Progress/Distribution' },
+  CONTEXT_ALERT:       { id: 'CONTEXT_ALERT',        label: 'تنبيه سياقي',          labelEn: 'Context Alert' },
+  HISTORICAL_COMPARE:  { id: 'HISTORICAL_COMPARE',   label: 'مقارنة تاريخية',       labelEn: 'Historical Comparison' },
+  DEEP_INSIGHT:        { id: 'DEEP_INSIGHT',         label: 'تحليل معمّق',          labelEn: 'Deep Insight' },
+  DATASET_HIGHLIGHT:   { id: 'DATASET_HIGHLIGHT',    label: 'إبراز مجموعة بيانات',  labelEn: 'Dataset Highlight' },
+  // Legacy types (backward compatibility)
+  ARTICLE:             { id: 'ARTICLE',              label: 'مقال',                 labelEn: 'Article' },
+  REPORT:              { id: 'REPORT',               label: 'تقرير',                labelEn: 'Report' },
+  ANALYSIS:            { id: 'ANALYSIS',             label: 'تحليل',                labelEn: 'Analysis' },
+  INSIGHT:             { id: 'INSIGHT',              label: 'رؤية',                 labelEn: 'Insight' },
+  CHART:               { id: 'CHART',                label: 'رسم بياني',            labelEn: 'Chart' },
+  VISUAL:              { id: 'VISUAL',               label: 'بصري',                 labelEn: 'Visual' },
+  INFOGRAPHIC:         { id: 'INFOGRAPHIC',          label: 'إنفوجرافيك',           labelEn: 'Infographic' },
+};
+
+const ALL_TYPE_IDS = Object.keys(POST_TYPES);
+
 // Role-to-content-type mapping
 const ROLE_CONTENT_TYPES: Record<string, string[]> = {
-  WRITER: ['ARTICLE', 'REPORT'],
-  EXPERT: ['ARTICLE', 'REPORT', 'ANALYSIS', 'INSIGHT', 'DEEP_INSIGHT'],
-  ANALYST: ['ANALYSIS', 'CHART', 'COMPARISON', 'DATA_HIGHLIGHT'],
-  DESIGNER: ['VISUAL', 'INFOGRAPHIC'],
-  ADMIN: ['ARTICLE', 'REPORT', 'ANALYSIS', 'INSIGHT', 'DEEP_INSIGHT', 'CHART', 'COMPARISON', 'DATA_HIGHLIGHT', 'VISUAL', 'INFOGRAPHIC', 'SIGNAL_ALERT', 'SUMMARY'],
-  SUPER_ADMIN: ['ARTICLE', 'REPORT', 'ANALYSIS', 'INSIGHT', 'DEEP_INSIGHT', 'CHART', 'COMPARISON', 'DATA_HIGHLIGHT', 'VISUAL', 'INFOGRAPHIC', 'SIGNAL_ALERT', 'SUMMARY'],
+  WRITER: ['ARTICLE', 'REPORT', 'INTRO_INSIGHT', 'QUICK_METRIC', 'AI_SUMMARY', 'CONTEXT_ALERT'],
+  EXPERT: ['ARTICLE', 'REPORT', 'ANALYSIS', 'INSIGHT', 'DEEP_INSIGHT', 'INTRO_INSIGHT', 'SIGNAL_POST', 'COMPARISON', 'HISTORICAL_COMPARE', 'CONTEXT_ALERT', 'AI_SUMMARY', 'QUICK_METRIC'],
+  ANALYST: ['ANALYSIS', 'CHART', 'COMPARISON', 'DATASET_HIGHLIGHT', 'CHART_GRAPH', 'QUICK_METRIC', 'PROGRESS_DIST', 'HISTORICAL_COMPARE', 'DEEP_INSIGHT'],
+  DESIGNER: ['VISUAL', 'INFOGRAPHIC', 'VISUAL_CONTEXT', 'CHART_GRAPH', 'PROGRESS_DIST'],
+  ADMIN: ALL_TYPE_IDS,
+  SUPER_ADMIN: ALL_TYPE_IDS,
 };
 
 // Roles that can review content
@@ -592,6 +618,49 @@ export async function getPendingContentStream(req: Request, res: Response, _next
   }
 }
 
+// Get available post types for current user's role
+export async function getPostTypes(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const userRole = req.user?.role || 'USER';
+    const allowedTypes = ROLE_CONTENT_TYPES[userRole] || [];
+
+    const types = Object.values(POST_TYPES)
+      .filter(t => allowedTypes.includes(t.id))
+      .map(t => ({
+        id: t.id,
+        label: t.label,
+        labelEn: t.labelEn,
+      }));
+
+    sendSuccess(res, types);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Get all post types (public)
+export async function getAllPostTypes(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const types = Object.values(POST_TYPES).map(t => ({
+      id: t.id,
+      label: t.label,
+      labelEn: t.labelEn,
+    }));
+
+    sendSuccess(res, types);
+  } catch (error) {
+    next(error);
+  }
+}
+
 export default {
   createUserContent,
   updateUserContent,
@@ -605,4 +674,6 @@ export default {
   pinContent,
   getPendingContent,
   getPendingContentStream,
+  getPostTypes,
+  getAllPostTypes,
 };

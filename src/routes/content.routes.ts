@@ -23,6 +23,8 @@ import {
   deleteUserContent,
   getMyContent,
   getMyContentStream,
+  getPostTypes,
+  getAllPostTypes,
   submitForReview,
   reviewContent,
   scheduleContent,
@@ -50,6 +52,7 @@ router.get('/feed/stream', getFeedStream);
 router.get('/timeline', getTimeline);
 router.get('/timeline/stream', getTimelineStream);
 router.get('/types', getContentTypes);
+router.get('/post-types', getAllPostTypes);
 router.get('/tags', getPopularTags);
 router.get('/trending', getTrending);
 
@@ -60,6 +63,9 @@ router.get('/my', authenticate, getMyContent);
 router.get('/my/stream', authenticate, getMyContentStream);
 router.get('/pending', authenticate, requireRole('EDITOR', 'CONTENT_MANAGER', 'ADMIN', 'SUPER_ADMIN'), getPendingContent);
 router.get('/pending/stream', authenticate, requireRole('EDITOR', 'CONTENT_MANAGER', 'ADMIN', 'SUPER_ADMIN'), getPendingContentStream);
+
+// Get available post types for user's role
+router.get('/my/post-types', authenticate, getPostTypes);
 
 // Create content (role-gated in controller)
 router.post('/create', authenticate, createUserContent);
