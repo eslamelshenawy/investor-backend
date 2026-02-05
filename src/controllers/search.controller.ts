@@ -4,10 +4,8 @@
  */
 
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../services/database.js';
 import { sendSuccess, sendError } from '../utils/response.js';
-
-const prisma = new PrismaClient();
 
 /**
  * GET /api/search?q=...&type=...&page=...&limit=...
@@ -229,9 +227,9 @@ export async function search(req: Request, res: Response) {
       total: activeCount,
       totalPages: Math.ceil(activeCount / limit),
     });
-  } catch (error) {
-    console.error('Search error:', error);
-    return sendError(res, 'Search failed', 'فشل البحث', 500);
+  } catch (error: any) {
+    console.error('Search error:', error?.message || error);
+    return sendError(res, 'Search failed: ' + (error?.message || ''), 'فشل البحث', 500);
   }
 }
 

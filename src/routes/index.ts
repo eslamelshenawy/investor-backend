@@ -16,6 +16,7 @@ import exportRoutes from './export.routes.js';
 import uploadRoutes from './upload.routes.js';
 import dashboardTemplateRoutes from './dashboard-template.routes.js';
 import recommendationRoutes from './recommendation.routes.js';
+import { getHeatmapData } from '../controllers/heatmap.controller.js';
 
 const router = Router();
 
@@ -46,5 +47,6 @@ router.use('/export', exportRoutes);
 router.use('/uploads', uploadRoutes);
 router.use('/dashboard-templates', dashboardTemplateRoutes);
 router.use('/recommendations', recommendationRoutes);
+router.get('/heatmap', getHeatmapData);
 
 export default router;

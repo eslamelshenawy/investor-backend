@@ -35,7 +35,7 @@ export async function getRecommendations(
       // Entities user follows
       prisma.follow.findMany({
         where: { followerId: userId },
-        select: { followingId: true },
+        select: { followedUserId: true, followedEntityId: true },
         take: 10,
       }),
 
