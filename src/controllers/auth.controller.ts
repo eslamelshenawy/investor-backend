@@ -76,6 +76,7 @@ export async function register(
         nameAr: true,
         avatar: true,
         role: true,
+        emailVerified: true,
         createdAt: true,
       },
     });
@@ -165,6 +166,7 @@ export async function login(
         nameAr: user.nameAr,
         avatar: user.avatar,
         role: user.role,
+        emailVerified: user.emailVerified,
       },
       token,
     });

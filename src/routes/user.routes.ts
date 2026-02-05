@@ -6,6 +6,7 @@ import {
   removeFavorite,
   checkFavorite,
   getDashboards,
+  getDashboardsStream,
   getDashboard,
   createDashboard,
   updateDashboard,
@@ -28,6 +29,7 @@ router.get('/favorites/check/:itemType/:itemId', checkFavorite);
 
 // Dashboards
 router.get('/dashboards', getDashboards);
+router.get('/dashboards/stream', getDashboardsStream);
 router.get('/dashboards/:id', getDashboard);
 router.post('/dashboards', createDashboard);
 router.put('/dashboards/:id', updateDashboard);

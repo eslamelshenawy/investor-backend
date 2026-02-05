@@ -299,6 +299,48 @@ export async function deleteDashboard(
   }
 }
 
+// SSE Stream: Get user dashboards as a stream (WebFlux-style)
+export async function getDashboardsStream(
+  req: Request,
+  res: Response,
+  _next: NextFunction
+): Promise<void> {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const sendEvent = (eventName: string, data: unknown) => {
+    res.write(`event: ${eventName}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const userId = req.user!.userId;
+
+    const total = await prisma.dashboard.count({ where: { userId } });
+    sendEvent('start', { message: 'جاري تحميل لوحاتك...', total, timestamp: new Date() });
+
+    const dashboards = await prisma.dashboard.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    for (const dashboard of dashboards) {
+      sendEvent('dashboard', dashboard);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
+
+    sendEvent('complete', { message: 'تم تحميل جميع اللوحات', total: dashboards.length });
+    res.end();
+  } catch (error) {
+    sendEvent('error', { message: 'حدث خطأ في تحميل اللوحات', error: String(error) });
+    res.end();
+  }
+}
+
 // =====================
 // Notifications
 // =====================

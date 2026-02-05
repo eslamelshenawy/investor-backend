@@ -1,8 +1,9 @@
 /**
  * Email Service - خدمة البريد الإلكتروني
- * Currently logs emails to console. Replace with SMTP/SendGrid/SES for production.
+ * Uses Nodemailer with SMTP (Plesk Mail)
  */
 
+import nodemailer from 'nodemailer';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
 
@@ -12,21 +13,57 @@ interface EmailOptions {
   html: string;
 }
 
+// Create reusable transporter
+let transporter: nodemailer.Transporter | null = null;
+
+function getTransporter(): nodemailer.Transporter {
+  if (!transporter) {
+    if (!config.smtp.host || !config.smtp.user) {
+      logger.warn('SMTP not configured - emails will be logged only');
+      // Fallback: log-only transporter
+      return {
+        sendMail: async (opts: any) => {
+          logger.info(`📧 [LOG ONLY] Email to: ${opts.to}`);
+          logger.info(`   Subject: ${opts.subject}`);
+          return { messageId: 'log-only' };
+        },
+      } as any;
+    }
+
+    transporter = nodemailer.createTransport({
+      host: config.smtp.host,
+      port: config.smtp.port,
+      secure: config.smtp.port === 465, // true for 465, false for 587
+      auth: {
+        user: config.smtp.user,
+        pass: config.smtp.pass,
+      },
+      tls: {
+        rejectUnauthorized: false, // Allow self-signed certs (common on Plesk)
+      },
+    });
+  }
+  return transporter;
+}
+
 /**
- * Send an email (currently logs to console in dev, can be extended with SMTP)
+ * Send an email via SMTP
  */
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   try {
-    // TODO: Replace with actual email service (SendGrid, SES, Nodemailer, etc.)
-    logger.info(`📧 Email to: ${options.to}`);
-    logger.info(`   Subject: ${options.subject}`);
-    logger.debug(`   Body: ${options.html.substring(0, 200)}...`);
+    const transport = getTransporter();
 
-    // In production, this would send via SMTP
-    // For now, log the email content so it can be tested
+    const info = await transport.sendMail({
+      from: config.smtp.from,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+    });
+
+    logger.info(`📧 Email sent to: ${options.to} (${info.messageId})`);
     return true;
-  } catch (error) {
-    logger.error('Failed to send email:', error);
+  } catch (error: any) {
+    logger.error(`Failed to send email to ${options.to}: ${error?.message || error?.code || JSON.stringify(error)}`);
     return false;
   }
 }
