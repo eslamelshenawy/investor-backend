@@ -576,6 +576,142 @@ export async function getAllSaudiDatasets(
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Verification endpoints
+// ═══════════════════════════════════════════════════════════════════
+
+export async function getUnverifiedDatasets(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { page = '1', limit = '20', search, category, status } = req.query;
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = Math.min(parseInt(limit as string, 10), 50);
+
+    const where: any = { isActive: true };
+
+    if (status && status !== 'all') {
+      where.verificationStatus = status as string;
+    } else {
+      where.verificationStatus = { not: 'VERIFIED' };
+    }
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search as string, mode: 'insensitive' } },
+        { nameAr: { contains: search as string, mode: 'insensitive' } },
+      ];
+    }
+    if (category && category !== 'all') {
+      where.category = category as string;
+    }
+
+    const [datasets, total] = await Promise.all([
+      prisma.dataset.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' },
+        skip: (pageNum - 1) * limitNum,
+        take: limitNum,
+        select: {
+          id: true, name: true, nameAr: true, category: true, source: true,
+          recordCount: true, syncStatus: true, lastSyncAt: true,
+          verificationStatus: true, verifiedBy: true, verifiedAt: true,
+          verificationNote: true, verificationNoteAr: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.dataset.count({ where }),
+    ]);
+
+    sendPaginated(res, datasets, total, pageNum, limitNum);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getVerificationStats(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const [unverified, verified, needsReview, rejected] = await Promise.all([
+      prisma.dataset.count({ where: { verificationStatus: 'UNVERIFIED', isActive: true } }),
+      prisma.dataset.count({ where: { verificationStatus: 'VERIFIED', isActive: true } }),
+      prisma.dataset.count({ where: { verificationStatus: 'NEEDS_REVIEW', isActive: true } }),
+      prisma.dataset.count({ where: { verificationStatus: 'REJECTED', isActive: true } }),
+    ]);
+
+    // Verified this week
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const verifiedThisWeek = await prisma.dataset.count({
+      where: {
+        verificationStatus: 'VERIFIED',
+        verifiedAt: { gte: oneWeekAgo },
+        isActive: true,
+      },
+    });
+
+    sendSuccess(res, {
+      unverified, verified, needsReview, rejected, verifiedThisWeek,
+      total: unverified + verified + needsReview + rejected,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function verifyDataset(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.userId;
+    const { status, note, noteAr } = req.body;
+
+    if (!['VERIFIED', 'REJECTED', 'NEEDS_REVIEW', 'UNVERIFIED'].includes(status)) {
+      sendError(res, 'Invalid verification status', 'حالة تحقق غير صالحة', 400);
+      return;
+    }
+
+    const dataset = await prisma.dataset.findUnique({ where: { id } });
+    if (!dataset) {
+      sendError(res, 'Dataset not found', 'مجموعة البيانات غير موجودة', 404);
+      return;
+    }
+
+    const updated = await prisma.dataset.update({
+      where: { id },
+      data: {
+        verificationStatus: status,
+        verifiedBy: userId,
+        verifiedAt: new Date(),
+        verificationNote: note || null,
+        verificationNoteAr: noteAr || null,
+      },
+    });
+
+    // Log the action
+    await prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        action: `VERIFY_DATASET_${status}`,
+        targetType: 'DATASET',
+        targetId: id,
+        details: JSON.stringify({ previousStatus: dataset.verificationStatus, newStatus: status, note }),
+      },
+    }).catch(() => {}); // non-critical
+
+    sendSuccess(res, updated, 'Dataset verification updated', 'تم تحديث حالة التحقق');
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Export
 // ═══════════════════════════════════════════════════════════════════
 
@@ -589,4 +725,7 @@ export default {
   getSyncStatus,
   getSaudiDatasets,
   getAllSaudiDatasets,
+  getUnverifiedDatasets,
+  getVerificationStats,
+  verifyDataset,
 };

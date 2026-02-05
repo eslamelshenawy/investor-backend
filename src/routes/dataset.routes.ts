@@ -10,6 +10,9 @@ import {
   getSyncStatus,
   getSaudiDatasets,
   getAllSaudiDatasets,
+  getUnverifiedDatasets,
+  getVerificationStats,
+  verifyDataset,
 } from '../controllers/dataset.controller.js';
 
 const router = Router();
@@ -57,6 +60,20 @@ router.get('/categories', getCategories);
 router.get('/sync/status', getSyncStatus);
 
 /**
+ * @route   GET /api/datasets/unverified
+ * @desc    قائمة مجموعات البيانات غير المحققة
+ * @access  Expert+
+ */
+router.get('/unverified', authenticate, requireRole('EXPERT', 'ADMIN', 'SUPER_ADMIN'), getUnverifiedDatasets);
+
+/**
+ * @route   GET /api/datasets/verification-stats
+ * @desc    إحصائيات التحقق
+ * @access  Expert+
+ */
+router.get('/verification-stats', authenticate, requireRole('EXPERT', 'ADMIN', 'SUPER_ADMIN'), getVerificationStats);
+
+/**
  * @route   GET /api/datasets/:id
  * @desc    تفاصيل Dataset (metadata فقط)
  * @access  Public
@@ -90,5 +107,12 @@ router.get('/:id/preview', getDatasetPreviewData);
  * @access  Admin
  */
 router.post('/:id/refresh', authenticate, requireRole('ADMIN'), refreshDatasetCache);
+
+/**
+ * @route   PATCH /api/datasets/:id/verify
+ * @desc    تحديث حالة التحقق لمجموعة بيانات
+ * @access  Expert+
+ */
+router.patch('/:id/verify', authenticate, requireRole('EXPERT', 'ADMIN', 'SUPER_ADMIN'), verifyDataset);
 
 export default router;

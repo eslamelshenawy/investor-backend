@@ -29,6 +29,19 @@ model User {
   bio           String?
   bioAr         String?   @map("bio_ar")
   phone         String?
+  location      String?
+  locationAr    String?   @map("location_ar")
+  skills        String?   // JSON array string e.g. '["التحليل المالي","التداول"]'
+  coverImage    String?   @map("cover_image")
+
+  // 2FA
+  twoFactorEnabled Boolean   @default(false) @map("two_factor_enabled")
+  twoFactorSecret  String?   @map("two_factor_secret")
+  twoFactorBackup  String?   @map("two_factor_backup") // JSON array of backup codes
+
+  // OAuth / SSO
+  provider         String?   // google, github, etc.
+  providerId       String?   @map("provider_id")
 
   // Relations
   dashboards    Dashboard[]
@@ -219,6 +232,13 @@ model Dataset {
   syncError     String?   @map("sync_error")
 
   isActive      Boolean   @default(true) @map("is_active")
+
+  // Verification
+  verificationStatus  String    @default("UNVERIFIED") @map("verification_status")
+  verifiedBy          String?   @map("verified_by")
+  verifiedAt          DateTime? @map("verified_at")
+  verificationNote    String?   @map("verification_note")
+  verificationNoteAr  String?   @map("verification_note_ar")
 
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")

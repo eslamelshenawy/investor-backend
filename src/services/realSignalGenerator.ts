@@ -19,6 +19,12 @@ interface SignalData {
   sector?: string;
   relatedDatasets: string[];
   indicators: Record<string, unknown>;
+  explanation?: {
+    why: string;
+    dataUsed: string[];
+    assumptions: string[];
+    limitations: string[];
+  };
 }
 
 interface InsightData {
@@ -148,6 +154,12 @@ export async function generateRealSignals(): Promise<AnalysisResult> {
           datasetCount: topCategory._count.id,
           category: topCategory.category,
         },
+        explanation: {
+          why: `تم رصد هذه الإشارة بناءً على تحليل ${topCategory._count.id} مجموعة بيانات في قطاع ${sectorInfo.ar} من البوابة الوطنية للبيانات المفتوحة`,
+          dataUsed: [`إحصائيات قطاع ${sectorInfo.ar}`, 'البوابة الوطنية للبيانات المفتوحة'],
+          assumptions: ['البيانات محدثة من المصدر الرسمي', 'عدد مجموعات البيانات يعكس أهمية القطاع'],
+          limitations: ['لا يشمل البيانات غير الحكومية', 'التحليل يعتمد على الكمية لا الجودة'],
+        },
       });
     }
 
@@ -170,6 +182,12 @@ export async function generateRealSignals(): Promise<AnalysisResult> {
           newDatasets: recentDatasets.length,
           sectorsAffected: categories.length,
           topSectors: categories.slice(0, 3),
+        },
+        explanation: {
+          why: `تم رصد ${recentDatasets.length} تحديث جديد خلال الأسبوع الماضي في ${categories.length} قطاعات مختلفة، مما يشير إلى نشاط في تحديث البيانات الحكومية`,
+          dataUsed: recentDatasets.slice(0, 3).map(d => d.nameAr || d.name),
+          assumptions: ['البيانات المحدثة تعكس تغيرات فعلية في القطاعات', 'التحديثات الحديثة أكثر دقة'],
+          limitations: ['لا يمكن تحديد نوع التحديث (إضافة أم تعديل)', 'بعض التحديثات قد تكون تقنية وليست جوهرية'],
         },
       });
     }
@@ -199,6 +217,12 @@ export async function generateRealSignals(): Promise<AnalysisResult> {
           datasetName: topDataset.name,
           recordCount: topDataset.recordCount,
           category: topDataset.category,
+        },
+        explanation: {
+          why: `"${topDataset.nameAr}" تحتوي على أكبر عدد سجلات (${topDataset.recordCount?.toLocaleString()}) في قطاع ${sectorInfo.ar}، مما يجعلها مصدراً مهماً للتحليل`,
+          dataUsed: [topDataset.nameAr || topDataset.name],
+          assumptions: ['حجم البيانات الكبير يعني تغطية أشمل', 'البيانات الحكومية موثوقة'],
+          limitations: ['حجم البيانات لا يعني بالضرورة جودة عالية', 'قد تحتوي على سجلات مكررة'],
         },
       });
     }
@@ -297,6 +321,12 @@ export async function generateRealSignals(): Promise<AnalysisResult> {
           outdatedCount: outdatedDatasets,
           totalDatasets: totalDatasets,
           outdatedPercent: outdatedPercent,
+        },
+        explanation: {
+          why: `${outdatedPercent}% من مجموعات البيانات لم تُحدَّث منذ أكثر من 30 يوم، مما يقلل من موثوقية التحليلات المبنية عليها`,
+          dataUsed: ['سجلات المزامنة', 'تواريخ آخر تحديث لمجموعات البيانات'],
+          assumptions: ['البيانات التي مر عليها أكثر من شهر قد لا تعكس الواقع الحالي'],
+          limitations: ['بعض البيانات قد تكون ثابتة بطبيعتها ولا تحتاج تحديثاً متكرراً'],
         },
       });
     }
@@ -438,6 +468,7 @@ export async function saveRealSignals(signals: SignalData[]): Promise<number> {
           details: JSON.stringify({
             relatedDatasets: signal.relatedDatasets,
             indicators: signal.indicators,
+            explanation: signal.explanation || null,
           }),
           isActive: true,
         },

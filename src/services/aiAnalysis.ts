@@ -43,6 +43,12 @@ interface SignalData {
   sector?: string;
   relatedDatasets: string[];
   indicators: Record<string, unknown>;
+  explanation?: {
+    why: string;
+    dataUsed: string[];
+    assumptions: string[];
+    limitations: string[];
+  };
 }
 
 interface InsightData {
@@ -236,7 +242,13 @@ ${dataSummary}
       "region": "optional region",
       "sector": "optional sector",
       "relatedDatasets": ["dataset names"],
-      "indicators": {}
+      "indicators": {},
+      "explanation": {
+        "why": "سبب ظهور هذه الإشارة بالعربية - اشرح المنطق والأسباب",
+        "dataUsed": ["اسم مجموعة البيانات 1", "اسم مجموعة البيانات 2"],
+        "assumptions": ["الافتراض الأول بالعربية", "الافتراض الثاني"],
+        "limitations": ["القيد الأول بالعربية", "القيد الثاني"]
+      }
     }
   ],
   "insights": [
@@ -307,6 +319,7 @@ async function saveSignals(signals: SignalData[]): Promise<void> {
           details: JSON.stringify({
             relatedDatasets: signal.relatedDatasets,
             indicators: signal.indicators,
+            explanation: signal.explanation || null,
           }),
           isActive: true,
         },
@@ -409,9 +422,31 @@ ${JSON.stringify(records.slice(0, 20).map(r => JSON.parse(r.data)), null, 2)}
 }
 
 /**
- * Generate daily market summary
+ * Daily summary result with structured key points
  */
-export async function generateDailySummary(): Promise<{ summary: string; summaryAr: string } | null> {
+export interface DailySummaryResult {
+  summary: string;
+  summaryAr: string;
+  keyPoints?: Array<{
+    title: string;
+    description: string;
+    impact: 'positive' | 'negative' | 'neutral';
+    sector?: string;
+  }>;
+  marketMood?: 'bullish' | 'bearish' | 'neutral';
+  topSectors?: string[];
+  signalStats?: {
+    total: number;
+    opportunities: number;
+    risks: number;
+    trends: number;
+  };
+}
+
+/**
+ * Generate daily market summary with structured key points
+ */
+export async function generateDailySummary(): Promise<DailySummaryResult | null> {
   try {
     const signals = await prisma.signal.findMany({
       where: {
@@ -424,31 +459,68 @@ export async function generateDailySummary(): Promise<{ summary: string; summary
       take: 10,
     });
 
+    const opportunities = signals.filter(s => s.type === 'OPPORTUNITY').length;
+    const risks = signals.filter(s => s.type === 'RISK').length;
+    const trends = signals.filter(s => s.type === 'TREND').length;
+    const sectors = [...new Set(signals.map(s => s.sector).filter(Boolean))];
+
+    const signalStats = { total: signals.length, opportunities, risks, trends };
+
     if (signals.length === 0) {
       return {
         summary: 'No significant market signals today. Markets remain stable.',
         summaryAr: 'لا توجد إشارات سوقية مهمة اليوم. الأسواق مستقرة.',
+        keyPoints: [{ title: 'السوق مستقر', description: 'لم يتم رصد إشارات مهمة اليوم', impact: 'neutral' }],
+        marketMood: 'neutral',
+        topSectors: [],
+        signalStats,
       };
     }
 
     const prompt = `
-بناءً على الإشارات الاستثمارية التالية، اكتب ملخصاً يومياً للسوق السعودي:
+بناءً على الإشارات الاستثمارية التالية، اكتب ملخصاً يومياً للسوق السعودي مع نقاط رئيسية:
 
-${signals.map(s => `- ${s.titleAr}: ${s.summaryAr}`).join('\n')}
+${signals.map(s => `- [${s.type}] ${s.titleAr}: ${s.summaryAr} (تأثير: ${s.impactScore}، قطاع: ${s.sector || 'عام'})`).join('\n')}
 
 أعد الملخص بصيغة JSON:
 {
   "summary": "English summary (150 words max)",
-  "summaryAr": "الملخص بالعربية (150 كلمة كحد أقصى)"
+  "summaryAr": "الملخص بالعربية (150 كلمة كحد أقصى)",
+  "keyPoints": [
+    {
+      "title": "عنوان النقطة بالعربية",
+      "description": "شرح مختصر بالعربية",
+      "impact": "positive|negative|neutral",
+      "sector": "اسم القطاع (اختياري)"
+    }
+  ],
+  "marketMood": "bullish|bearish|neutral"
 }
+
+ملاحظات:
+- أضف 3-7 نقاط رئيسية تلخص أهم ما في الإشارات
+- حدد مزاج السوق بناءً على نسبة الفرص للمخاطر
+- اكتب كل شيء بالعربية إلا حقل summary
 `;
 
     const response = await callOpenAI(prompt);
 
     if (!response) {
+      // Fallback: generate structured summary from signal data directly
+      const keyPoints = signals.slice(0, 5).map(s => ({
+        title: s.titleAr,
+        description: s.summaryAr,
+        impact: (s.type === 'OPPORTUNITY' ? 'positive' : s.type === 'RISK' ? 'negative' : 'neutral') as 'positive' | 'negative' | 'neutral',
+        sector: s.sector || undefined,
+      }));
+
       return {
-        summary: `Today's market shows ${signals.length} active signals with ${signals.filter(s => s.type === 'OPPORTUNITY').length} opportunities identified.`,
-        summaryAr: `يُظهر السوق اليوم ${signals.length} إشارات نشطة مع تحديد ${signals.filter(s => s.type === 'OPPORTUNITY').length} فرص استثمارية.`,
+        summary: `Today's market shows ${signals.length} active signals with ${opportunities} opportunities and ${risks} risks identified.`,
+        summaryAr: `يُظهر السوق اليوم ${signals.length} إشارات نشطة مع تحديد ${opportunities} فرص و${risks} مخاطر.`,
+        keyPoints,
+        marketMood: opportunities > risks ? 'bullish' : risks > opportunities ? 'bearish' : 'neutral',
+        topSectors: sectors as string[],
+        signalStats,
       };
     }
 
@@ -459,6 +531,10 @@ ${signals.map(s => `- ${s.titleAr}: ${s.summaryAr}`).join('\n')}
         return {
           summary: parsed.summary || '',
           summaryAr: parsed.summaryAr || '',
+          keyPoints: parsed.keyPoints || [],
+          marketMood: parsed.marketMood || 'neutral',
+          topSectors: sectors as string[],
+          signalStats,
         };
       }
     } catch {

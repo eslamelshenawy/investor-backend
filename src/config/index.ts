@@ -51,6 +51,11 @@ export const config = {
     from: process.env.SMTP_FROM || process.env.SMTP_USER || '',
   },
 
+  // Google OAuth
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+  },
+
   // Rate limiting
   rateLimit: {
     windowMs: 15 * 60 * 1000, // 15 minutes

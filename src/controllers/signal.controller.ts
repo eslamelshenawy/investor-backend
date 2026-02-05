@@ -4,6 +4,7 @@ import { cacheGet, cacheSet, CacheKeys } from '../services/cache.js';
 import { sendSuccess, sendPaginated, sendError } from '../utils/response.js';
 import { analyzeDatasets, generateDailySummary, analyzeDataset } from '../services/aiAnalysis.js';
 import { generateAndSaveRealSignals } from '../services/realSignalGenerator.js';
+import { getPatternsCached, detectPatterns } from '../services/patternRecognition.js';
 
 // Get all signals
 export async function getSignals(
@@ -394,6 +395,39 @@ export async function streamSignals(
   }
 }
 
+// Get detected patterns (cached)
+export async function getPatterns(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const patterns = await getPatternsCached();
+    sendSuccess(res, patterns);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Trigger pattern detection (admin only, refreshes cache)
+export async function triggerPatternDetection(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const patterns = await detectPatterns();
+    sendSuccess(res, {
+      patternsDetected: patterns.length,
+      patterns,
+      message: 'Pattern detection completed',
+      messageAr: 'تم اكتشاف الأنماط بنجاح',
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export default {
   getSignals,
   getSignal,
@@ -404,4 +438,6 @@ export default {
   analyzeDatasetSignals,
   getSignalsDashboard,
   streamSignals,
+  getPatterns,
+  triggerPatternDetection,
 };

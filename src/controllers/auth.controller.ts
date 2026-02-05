@@ -149,6 +149,15 @@ export async function login(
       return;
     }
 
+    // Check if 2FA is enabled
+    if (user.twoFactorEnabled) {
+      sendSuccess(res, {
+        requires2FA: true,
+        userId: user.id,
+      });
+      return;
+    }
+
     // Generate token
     const token = generateToken({
       userId: user.id,
@@ -193,6 +202,10 @@ export async function getMe(
         bio: true,
         bioAr: true,
         phone: true,
+        location: true,
+        locationAr: true,
+        skills: true,
+        coverImage: true,
         emailVerified: true,
         lastLoginAt: true,
         createdAt: true,
@@ -215,7 +228,36 @@ export async function getMe(
       return;
     }
 
-    sendSuccess(res, user);
+    // Get recent published content + total views
+    const [recentContent, viewsAgg] = await Promise.all([
+      prisma.content.findMany({
+        where: { authorId: user.id, status: 'PUBLISHED' },
+        select: {
+          id: true,
+          type: true,
+          title: true,
+          titleAr: true,
+          excerptAr: true,
+          viewCount: true,
+          likeCount: true,
+          commentCount: true,
+          publishedAt: true,
+        },
+        orderBy: { publishedAt: 'desc' },
+        take: 5,
+      }),
+      prisma.content.aggregate({
+        where: { authorId: user.id, status: 'PUBLISHED' },
+        _sum: { viewCount: true, likeCount: true },
+      }),
+    ]);
+
+    sendSuccess(res, {
+      ...user,
+      recentContent,
+      totalViews: viewsAgg._sum.viewCount || 0,
+      totalLikes: viewsAgg._sum.likeCount || 0,
+    });
   } catch (error) {
     next(error);
   }
@@ -234,6 +276,10 @@ export async function updateMe(
       bio: z.string().max(500).optional().nullable(),
       bioAr: z.string().max(500).optional().nullable(),
       phone: z.string().max(20).optional().nullable(),
+      location: z.string().max(100).optional().nullable(),
+      locationAr: z.string().max(100).optional().nullable(),
+      skills: z.string().max(1000).optional().nullable(),
+      coverImage: z.string().url().optional().nullable(),
     });
 
     const data = updateSchema.parse(req.body);
@@ -251,6 +297,10 @@ export async function updateMe(
         bio: true,
         bioAr: true,
         phone: true,
+        location: true,
+        locationAr: true,
+        skills: true,
+        coverImage: true,
         updatedAt: true,
       },
     });
@@ -626,4 +676,46 @@ export async function verifyEmail(
   }
 }
 
-export default { register, login, getMe, updateMe, changePassword, forgotPassword, resetPassword, getPublicProfile, refreshToken, sendVerification, verifyEmail };
+export async function getMyNetwork(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+
+    const [followersRaw, followingRaw] = await Promise.all([
+      prisma.follow.findMany({
+        where: { followedUserId: userId, followType: 'USER' },
+        select: {
+          follower: {
+            select: { id: true, name: true, nameAr: true, avatar: true, role: true },
+          },
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      prisma.follow.findMany({
+        where: { followerId: userId, followType: 'USER' },
+        select: {
+          followedUser: {
+            select: { id: true, name: true, nameAr: true, avatar: true, role: true },
+          },
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+    ]);
+
+    const followers = followersRaw.map((f) => ({ ...f.follower, followedAt: f.createdAt }));
+    const following = followingRaw.map((f) => ({ ...f.followedUser, followedAt: f.createdAt }));
+
+    sendSuccess(res, { followers, following });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export default { register, login, getMe, updateMe, changePassword, forgotPassword, resetPassword, getPublicProfile, refreshToken, sendVerification, verifyEmail, getMyNetwork };
