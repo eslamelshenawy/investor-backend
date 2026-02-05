@@ -854,30 +854,192 @@ export async function createContent(
   }
 }
 
-// Like content - simple version for immediate response
+// Like/Unlike content (toggle)
 export async function likeContent(
   req: Request,
   res: Response,
-  _next: NextFunction
+  next: NextFunction
 ): Promise<void> {
-  const id = String(req.params.id);
+  try {
+    const contentId = String(req.params.id);
+    const userId = req.user?.userId || null;
+    const sessionId = req.headers['x-session-id'] as string || null;
 
-  // Simple response - frontend handles state
-  // Real tracking can be added later with proper database schema
-  sendSuccess(res, { liked: true, likeCount: 1, contentId: id }, 'Content liked', 'تم الإعجاب بالمحتوى');
+    if (!userId && !sessionId) {
+      sendError(res, 'Authentication or session required', 'يرجى تسجيل الدخول', 401);
+      return;
+    }
+
+    // Check if already liked
+    const whereClause = userId
+      ? { contentId_userId: { contentId, userId } }
+      : { contentId_sessionId: { contentId, sessionId: sessionId! } };
+
+    const existing = await prisma.contentLike.findUnique({ where: whereClause });
+
+    if (existing) {
+      // Unlike: remove like and decrement
+      await prisma.$transaction([
+        prisma.contentLike.delete({ where: { id: existing.id } }),
+        prisma.content.update({
+          where: { id: contentId },
+          data: { likeCount: { decrement: 1 } },
+        }),
+      ]);
+      const updated = await prisma.content.findUnique({
+        where: { id: contentId },
+        select: { likeCount: true },
+      });
+      sendSuccess(res, { liked: false, likeCount: updated?.likeCount || 0, contentId });
+    } else {
+      // Like: create like and increment
+      await prisma.$transaction([
+        prisma.contentLike.create({
+          data: { contentId, userId, sessionId },
+        }),
+        prisma.content.update({
+          where: { id: contentId },
+          data: { likeCount: { increment: 1 } },
+        }),
+      ]);
+      const updated = await prisma.content.findUnique({
+        where: { id: contentId },
+        select: { likeCount: true },
+      });
+      sendSuccess(res, { liked: true, likeCount: updated?.likeCount || 0, contentId });
+    }
+  } catch (error) {
+    next(error);
+  }
 }
 
-// Save/Favorite content - simple version for immediate response
+// Save/Unsave content (toggle bookmark)
 export async function saveContent(
   req: Request,
   res: Response,
-  _next: NextFunction
+  next: NextFunction
 ): Promise<void> {
-  const id = String(req.params.id);
+  try {
+    const contentId = String(req.params.id);
+    const userId = req.user?.userId;
 
-  // Simple response - frontend handles state
-  // Real tracking can be added later with proper database schema
-  sendSuccess(res, { saved: true, saveCount: 1, contentId: id }, 'Added to favorites', 'تمت الإضافة للمفضلة');
+    if (!userId) {
+      sendError(res, 'Authentication required', 'يرجى تسجيل الدخول', 401);
+      return;
+    }
+
+    // Check if already saved
+    const existing = await prisma.contentSave.findUnique({
+      where: { contentId_userId: { contentId, userId } },
+    });
+
+    if (existing) {
+      // Unsave
+      await prisma.$transaction([
+        prisma.contentSave.delete({ where: { id: existing.id } }),
+        prisma.content.update({
+          where: { id: contentId },
+          data: { saveCount: { decrement: 1 } },
+        }),
+      ]);
+      const updated = await prisma.content.findUnique({
+        where: { id: contentId },
+        select: { saveCount: true },
+      });
+      sendSuccess(res, { saved: false, saveCount: updated?.saveCount || 0, contentId });
+    } else {
+      // Save
+      await prisma.$transaction([
+        prisma.contentSave.create({
+          data: { contentId, userId },
+        }),
+        prisma.content.update({
+          where: { id: contentId },
+          data: { saveCount: { increment: 1 } },
+        }),
+      ]);
+      const updated = await prisma.content.findUnique({
+        where: { id: contentId },
+        select: { saveCount: true },
+      });
+      sendSuccess(res, { saved: true, saveCount: updated?.saveCount || 0, contentId });
+    }
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Share content (increment counter)
+export async function shareContent(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const contentId = String(req.params.id);
+
+    const updated = await prisma.content.update({
+      where: { id: contentId },
+      data: { shareCount: { increment: 1 } },
+      select: { shareCount: true },
+    });
+
+    sendSuccess(res, { shared: true, shareCount: updated.shareCount, contentId });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Get engagement stats for a content item
+export async function getEngagement(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const contentId = String(req.params.id);
+    const userId = req.user?.userId;
+
+    const content = await prisma.content.findUnique({
+      where: { id: contentId },
+      select: {
+        likeCount: true,
+        saveCount: true,
+        commentCount: true,
+        shareCount: true,
+        viewCount: true,
+      },
+    });
+
+    if (!content) {
+      sendError(res, 'Content not found', 'المحتوى غير موجود', 404);
+      return;
+    }
+
+    let hasLiked = false;
+    let hasSaved = false;
+
+    if (userId) {
+      const [like, save] = await Promise.all([
+        prisma.contentLike.findUnique({
+          where: { contentId_userId: { contentId, userId } },
+        }),
+        prisma.contentSave.findUnique({
+          where: { contentId_userId: { contentId, userId } },
+        }),
+      ]);
+      hasLiked = !!like;
+      hasSaved = !!save;
+    }
+
+    sendSuccess(res, {
+      ...content,
+      hasLiked,
+      hasSaved,
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
 export default {
@@ -895,4 +1057,6 @@ export default {
   createContent,
   likeContent,
   saveContent,
+  shareContent,
+  getEngagement,
 };

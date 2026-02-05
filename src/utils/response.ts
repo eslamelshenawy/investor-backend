@@ -3,6 +3,8 @@ import { Response } from 'express';
 interface SuccessResponse<T> {
   success: true;
   data: T;
+  message?: string;
+  messageAr?: string;
   meta?: {
     page?: number;
     limit?: number;
@@ -23,16 +25,26 @@ type ApiResponse<T> = SuccessResponse<T> | ErrorResponse;
 export function sendSuccess<T>(
   res: Response,
   data: T,
-  statusCode: number = 200,
-  meta?: SuccessResponse<T>['meta']
+  statusCodeOrMessage?: number | string,
+  metaOrMessageAr?: SuccessResponse<T>['meta'] | string
 ): Response<ApiResponse<T>> {
   const response: SuccessResponse<T> = {
     success: true,
     data,
   };
 
-  if (meta) {
-    response.meta = meta;
+  let statusCode = 200;
+
+  if (typeof statusCodeOrMessage === 'string') {
+    response.message = statusCodeOrMessage;
+    if (typeof metaOrMessageAr === 'string') {
+      response.messageAr = metaOrMessageAr;
+    }
+  } else if (typeof statusCodeOrMessage === 'number') {
+    statusCode = statusCodeOrMessage;
+    if (metaOrMessageAr && typeof metaOrMessageAr === 'object') {
+      response.meta = metaOrMessageAr;
+    }
   }
 
   return res.status(statusCode).json(response);

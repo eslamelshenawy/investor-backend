@@ -25,11 +25,22 @@ model User {
   role          String    @default("USER")
   isActive      Boolean   @default(true) @map("is_active")
   emailVerified Boolean   @default(false) @map("email_verified")
+  lastLoginAt   DateTime? @map("last_login_at")
+  bio           String?
+  bioAr         String?   @map("bio_ar")
+  phone         String?
 
   // Relations
   dashboards    Dashboard[]
   favorites     Favorite[]
   notifications Notification[]
+  contents      Content[]      @relation("ContentAuthor")
+  comments      Comment[]
+  contentLikes  ContentLike[]
+  contentSaves  ContentSave[]
+  following     Follow[]       @relation("FollowingUser")
+  followers     Follow[]       @relation("FollowedUser")
+  passwordResets PasswordResetToken[]
 
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
@@ -125,10 +136,23 @@ model Content {
   viewCount    Int       @default(0) @map("view_count")
   likeCount    Int       @default(0) @map("like_count")
   saveCount    Int       @default(0) @map("save_count")
+  commentCount Int       @default(0) @map("comment_count")
+  shareCount   Int       @default(0) @map("share_count")
+
+  // Author & Workflow
+  authorId     String?   @map("author_id")
+  author       User?     @relation("ContentAuthor", fields: [authorId], references: [id])
+  reviewerId   String?   @map("reviewer_id")
+  reviewNote   String?   @map("review_note")
+  reviewNoteAr String?   @map("review_note_ar")
+  scheduledAt  DateTime? @map("scheduled_at")
+  isPinned     Boolean   @default(false) @map("is_pinned")
 
   // Relations
   datasetId    String?   @map("dataset_id")
   likes        ContentLike[]
+  comments     Comment[]
+  saves        ContentSave[]
 
   generatedAt  DateTime  @default(now()) @map("generated_at")
   publishedAt  DateTime? @map("published_at")
@@ -151,6 +175,7 @@ model ContentLike {
 
   // Relations
   content   Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -275,4 +300,143 @@ model Setting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// التعليقات - Comments
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Comment {
+  id        String    @id @default(cuid())
+  contentId String    @map("content_id")
+  userId    String    @map("user_id")
+  parentId  String?   @map("parent_id")
+  body      String
+  bodyAr    String?   @map("body_ar")
+  isEdited  Boolean   @default(false) @map("is_edited")
+
+  // Relations
+  content   Content   @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("comments")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// حفظ المحتوى - Content Saves/Bookmarks
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model ContentSave {
+  id        String   @id @default(cuid())
+  contentId String   @map("content_id")
+  userId    String   @map("user_id")
+
+  // Relations
+  content   Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([contentId, userId])
+  @@map("content_saves")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// سجل التدقيق - Audit Logs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String   @map("actor_id")
+  action     String
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  details    String   @default("{}")
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// الجهات والخبراء - Entities & Experts
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Entity {
+  id                String    @id @default(cuid())
+  name              String
+  nameEn            String?   @map("name_en")
+  role              String
+  type              String    // ministry, authority, expert, analyst
+  location          String?
+  avatar            String?
+  coverImage        String?   @map("cover_image")
+  isVerified        Boolean   @default(false) @map("is_verified")
+  verificationLevel String    @default("none") @map("verification_level") // official, verified, none
+  specialties       String    @default("[]") // JSON array
+  description       String?
+  website           String?
+  establishedYear   String?   @map("established_year")
+  impact            String    @default("medium") // critical, high, medium, low
+  isActive          Boolean   @default(true) @map("is_active")
+
+  // Stats (denormalized for performance)
+  followersCount    Int       @default(0) @map("followers_count")
+  postsCount        Int       @default(0) @map("posts_count")
+  datasetsCount     Int       @default(0) @map("datasets_count")
+
+  // Relations
+  entityFollows     Follow[]  @relation("FollowedEntity")
+
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@map("entities")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// المتابعة - Follows (User→User, User→Entity)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Follow {
+  id             String    @id @default(cuid())
+  followerId     String    @map("follower_id")
+  followType     String    @map("follow_type") // USER, ENTITY
+  followedUserId String?   @map("followed_user_id")
+  followedEntityId String? @map("followed_entity_id")
+
+  // Relations
+  follower       User      @relation("FollowingUser", fields: [followerId], references: [id], onDelete: Cascade)
+  followedUser   User?     @relation("FollowedUser", fields: [followedUserId], references: [id], onDelete: Cascade)
+  followedEntity Entity?   @relation("FollowedEntity", fields: [followedEntityId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@unique([followerId, followType, followedUserId])
+  @@unique([followerId, followType, followedEntityId])
+  @@map("follows")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// رموز استعادة كلمة المرور - Password Reset Tokens
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("password_reset_tokens")
 }

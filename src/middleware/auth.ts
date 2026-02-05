@@ -25,8 +25,12 @@ export async function authenticate(
 ): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
+    // Support token from query param for SSE/EventSource (which can't set headers)
+    const queryToken = req.query.token as string | undefined;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : queryToken;
+
+    if (!token) {
       res.status(401).json({
         success: false,
         error: 'Access denied. No token provided.',
@@ -34,8 +38,6 @@ export async function authenticate(
       });
       return;
     }
-
-    const token = authHeader.substring(7);
 
     const decoded = jwt.verify(token, config.jwt.secret) as JwtPayload;
 
