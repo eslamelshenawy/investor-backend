@@ -65,7 +65,7 @@ export async function createComment(
     // Verify content exists
     const content = await prisma.content.findUnique({
       where: { id: contentId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, authorId: true, titleAr: true, title: true },
     });
 
     if (!content || content.status !== 'PUBLISHED') {
@@ -107,6 +107,14 @@ export async function createComment(
         data: { commentCount: { increment: 1 } },
       }),
     ]);
+
+    // Send notification to content author
+    if (content.authorId && content.authorId !== userId) {
+      import('../utils/notify.js').then(({ notifyNewComment }) => {
+        const commenter = comment.user;
+        notifyNewComment(content.authorId, commenter?.nameAr || commenter?.name || 'مستخدم', content.titleAr || content.title || '', contentId).catch(() => {});
+      });
+    }
 
     sendSuccess(res, comment, 'Comment created', 'تم إضافة التعليق');
   } catch (error) {

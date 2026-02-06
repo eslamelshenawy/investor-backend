@@ -712,6 +712,275 @@ export async function verifyDataset(
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// البيانات الوصفية 3 مستويات - 3-Level Metadata
+// ═══════════════════════════════════════════════════════════════════
+
+import { z } from 'zod';
+
+const updateMetadataSchema = z.object({
+  // Level 1: Business Metadata
+  owner: z.string().max(200).optional().nullable(),
+  ownerAr: z.string().max(200).optional().nullable(),
+  steward: z.string().max(200).optional().nullable(),
+  stewardAr: z.string().max(200).optional().nullable(),
+  businessDomain: z.string().max(100).optional().nullable(),
+  tags: z.string().max(2000).optional().nullable(),
+  updateFrequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY', 'ONCE', 'REAL_TIME']).optional().nullable(),
+  license: z.string().max(200).optional().nullable(),
+  language: z.string().max(10).optional().nullable(),
+
+  // Level 2: Governance / Quality / Risk
+  sensitivityLevel: z.enum(['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED']).optional().nullable(),
+  qualityScore: z.number().min(0).max(100).optional().nullable(),
+  completeness: z.number().min(0).max(100).optional().nullable(),
+  accuracy: z.number().min(0).max(100).optional().nullable(),
+  timeliness: z.number().min(0).max(100).optional().nullable(),
+  consistency: z.number().min(0).max(100).optional().nullable(),
+  riskLevel: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional().nullable(),
+  complianceNotes: z.string().max(2000).optional().nullable(),
+  retentionPolicy: z.string().max(500).optional().nullable(),
+  accessRestrictions: z.string().max(500).optional().nullable(),
+  hasPII: z.boolean().optional().nullable(),
+
+  // Level 3: Technical Metadata
+  formatType: z.string().max(50).optional().nullable(),
+  encoding: z.string().max(50).optional().nullable(),
+  fileSize: z.string().max(50).optional().nullable(),
+  dataDictionary: z.any().optional().nullable(),
+  dataLineage: z.string().max(2000).optional().nullable(),
+  apiEndpoint: z.string().max(500).optional().nullable(),
+  schemaVersion: z.string().max(50).optional().nullable(),
+});
+
+/**
+ * GET /datasets/:id/metadata
+ * Get full 3-level metadata for a dataset
+ */
+export async function getDatasetMetadata(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    const dataset = await prisma.dataset.findUnique({
+      where: { id },
+      select: {
+        id: true, name: true, nameAr: true, category: true, source: true,
+        description: true, descriptionAr: true, recordCount: true, columns: true,
+        // Level 1
+        owner: true, ownerAr: true, steward: true, stewardAr: true,
+        businessDomain: true, tags: true, updateFrequency: true,
+        license: true, language: true,
+        // Level 2
+        sensitivityLevel: true, qualityScore: true, completeness: true,
+        accuracy: true, timeliness: true, consistency: true,
+        riskLevel: true, complianceNotes: true, retentionPolicy: true,
+        accessRestrictions: true, hasPII: true,
+        // Level 3
+        formatType: true, encoding: true, fileSize: true,
+        dataDictionary: true, dataLineage: true, apiEndpoint: true,
+        schemaVersion: true,
+        // Verification
+        verificationStatus: true, verifiedBy: true, verifiedAt: true,
+        // Meta
+        lastSyncAt: true, syncStatus: true, createdAt: true, updatedAt: true,
+      },
+    });
+
+    if (!dataset) {
+      sendError(res, 'Dataset not found', 'مجموعة البيانات غير موجودة', 404);
+      return;
+    }
+
+    // Parse columns for column count
+    let columnCount = 0;
+    try { columnCount = JSON.parse(dataset.columns || '[]').length; } catch {}
+
+    // Build structured response
+    const result = {
+      id: dataset.id,
+      name: dataset.name,
+      nameAr: dataset.nameAr,
+      category: dataset.category,
+      source: dataset.source,
+
+      businessMetadata: {
+        description: dataset.description,
+        descriptionAr: dataset.descriptionAr,
+        owner: dataset.owner,
+        ownerAr: dataset.ownerAr,
+        steward: dataset.steward,
+        stewardAr: dataset.stewardAr,
+        businessDomain: dataset.businessDomain,
+        tags: dataset.tags,
+        updateFrequency: dataset.updateFrequency,
+        license: dataset.license,
+        language: dataset.language,
+      },
+
+      governanceMetadata: {
+        sensitivityLevel: dataset.sensitivityLevel,
+        qualityScore: dataset.qualityScore,
+        completeness: dataset.completeness,
+        accuracy: dataset.accuracy,
+        timeliness: dataset.timeliness,
+        consistency: dataset.consistency,
+        riskLevel: dataset.riskLevel,
+        complianceNotes: dataset.complianceNotes,
+        retentionPolicy: dataset.retentionPolicy,
+        accessRestrictions: dataset.accessRestrictions,
+        hasPII: dataset.hasPII,
+        verificationStatus: dataset.verificationStatus,
+        verifiedBy: dataset.verifiedBy,
+        verifiedAt: dataset.verifiedAt,
+      },
+
+      technicalMetadata: {
+        recordCount: dataset.recordCount,
+        columnCount,
+        formatType: dataset.formatType,
+        encoding: dataset.encoding,
+        fileSize: dataset.fileSize,
+        dataDictionary: dataset.dataDictionary,
+        dataLineage: dataset.dataLineage,
+        apiEndpoint: dataset.apiEndpoint,
+        schemaVersion: dataset.schemaVersion,
+        syncStatus: dataset.syncStatus,
+        lastSyncAt: dataset.lastSyncAt,
+      },
+
+      createdAt: dataset.createdAt,
+      updatedAt: dataset.updatedAt,
+    };
+
+    sendSuccess(res, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * PUT /datasets/:id/metadata
+ * Update 3-level metadata for a dataset (Expert/Admin only)
+ */
+export async function updateDatasetMetadata(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user!.userId;
+    const data = updateMetadataSchema.parse(req.body);
+
+    const dataset = await prisma.dataset.findUnique({ where: { id } });
+    if (!dataset) {
+      sendError(res, 'Dataset not found', 'مجموعة البيانات غير موجودة', 404);
+      return;
+    }
+
+    // Build update object only with provided fields
+    const updateData: any = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== undefined) {
+        updateData[key] = value;
+      }
+    }
+
+    // Auto-calculate qualityScore if individual scores provided
+    const scores = [
+      data.completeness ?? (dataset as any).completeness,
+      data.accuracy ?? (dataset as any).accuracy,
+      data.timeliness ?? (dataset as any).timeliness,
+      data.consistency ?? (dataset as any).consistency,
+    ].filter((s): s is number => s !== null && s !== undefined);
+
+    if (scores.length > 0 && data.qualityScore === undefined) {
+      updateData.qualityScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    }
+
+    const updated = await prisma.dataset.update({
+      where: { id },
+      data: updateData,
+    });
+
+    // Log the action
+    await prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        action: 'UPDATE_DATASET_METADATA',
+        targetType: 'DATASET',
+        targetId: id,
+        details: JSON.stringify({ fields: Object.keys(updateData) }),
+      },
+    }).catch(() => {});
+
+    logger.info(`Dataset ${id} metadata updated by ${userId}`);
+    sendSuccess(res, updated, 'Metadata updated', 'تم تحديث البيانات الوصفية');
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /datasets/metadata/stats
+ * Get metadata completeness stats across all datasets
+ */
+export async function getMetadataStats(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const total = await prisma.dataset.count({ where: { isActive: true } });
+
+    const [withOwner, withQuality, withDictionary, withLineage] = await Promise.all([
+      prisma.dataset.count({ where: { isActive: true, owner: { not: null } } }),
+      prisma.dataset.count({ where: { isActive: true, qualityScore: { not: null } } }),
+      prisma.dataset.count({ where: { isActive: true, dataDictionary: { not: undefined } } }),
+      prisma.dataset.count({ where: { isActive: true, dataLineage: { not: null } } }),
+    ]);
+
+    // Sensitivity distribution
+    const sensitivityCounts = await prisma.dataset.groupBy({
+      by: ['sensitivityLevel'],
+      where: { isActive: true, sensitivityLevel: { not: null } },
+      _count: true,
+    });
+
+    // Risk distribution
+    const riskCounts = await prisma.dataset.groupBy({
+      by: ['riskLevel'],
+      where: { isActive: true, riskLevel: { not: null } },
+      _count: true,
+    });
+
+    // Average quality scores
+    const avgScores = await prisma.dataset.aggregate({
+      where: { isActive: true, qualityScore: { not: null } },
+      _avg: { qualityScore: true, completeness: true, accuracy: true, timeliness: true, consistency: true },
+    });
+
+    sendSuccess(res, {
+      total,
+      coverage: {
+        businessMetadata: total > 0 ? Math.round((withOwner / total) * 100) : 0,
+        qualityAssessed: total > 0 ? Math.round((withQuality / total) * 100) : 0,
+        dataDictionary: total > 0 ? Math.round((withDictionary / total) * 100) : 0,
+        dataLineage: total > 0 ? Math.round((withLineage / total) * 100) : 0,
+      },
+      sensitivity: sensitivityCounts.reduce((acc, s) => ({ ...acc, [s.sensitivityLevel || 'UNKNOWN']: s._count }), {}),
+      risk: riskCounts.reduce((acc, r) => ({ ...acc, [r.riskLevel || 'UNKNOWN']: r._count }), {}),
+      avgQuality: avgScores._avg,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Export
 // ═══════════════════════════════════════════════════════════════════
 
@@ -728,4 +997,7 @@ export default {
   getUnverifiedDatasets,
   getVerificationStats,
   verifyDataset,
+  getDatasetMetadata,
+  updateDatasetMetadata,
+  getMetadataStats,
 };

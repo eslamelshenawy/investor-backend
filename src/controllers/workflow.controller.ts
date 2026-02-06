@@ -346,10 +346,22 @@ export async function reviewContent(
           select: { id: true, name: true, nameAr: true },
         },
       },
-    });
+    }) as any;
 
     const msg = action === 'approve' ? 'Content approved' : 'Content rejected';
     const msgAr = action === 'approve' ? 'تمت الموافقة على المحتوى' : 'تم رفض المحتوى';
+
+    // Send notification to author
+    if (content.author?.id) {
+      import('../utils/notify.js').then(({ notifyContentApproved, notifyContentRejected }) => {
+        const title = (content as any).titleAr || (content as any).title || '';
+        if (action === 'approve') {
+          notifyContentApproved(content.author!.id, title, contentId).catch(() => {});
+        } else {
+          notifyContentRejected(content.author!.id, title, contentId, note).catch(() => {});
+        }
+      });
+    }
 
     sendSuccess(res, content, msg, msgAr);
   } catch (error) {

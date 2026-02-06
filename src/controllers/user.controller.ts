@@ -529,6 +529,88 @@ export async function markAllNotificationsRead(
   }
 }
 
+/**
+ * SSE Stream for notifications - WebFlux style
+ */
+export async function getNotificationsStream(
+  req: Request,
+  res: Response,
+  _next: NextFunction
+): Promise<void> {
+  const userId = req.user?.userId || (req.query.token ? undefined : null);
+
+  // For SSE with token auth
+  let resolvedUserId = userId;
+  if (!resolvedUserId && req.query.token) {
+    try {
+      const jwt = await import('jsonwebtoken');
+      const config = await import('../config/index.js');
+      const decoded = jwt.default.verify(String(req.query.token), config.default.jwt.secret) as any;
+      resolvedUserId = decoded.userId;
+    } catch { /* ignore */ }
+  }
+
+  if (!resolvedUserId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const sendEvent = (event: string, data: any) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  sendEvent('connected', { message: 'Notifications stream connected' });
+
+  // Send current notifications
+  try {
+    const [notifications, unreadCount] = await Promise.all([
+      prisma.notification.findMany({
+        where: { userId: resolvedUserId },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+      }),
+      prisma.notification.count({ where: { userId: resolvedUserId, isRead: false } }),
+    ]);
+
+    sendEvent('notifications', { notifications, unreadCount });
+  } catch (err) {
+    sendEvent('error', { message: 'Failed to load notifications' });
+  }
+
+  // Poll for new notifications every 10 seconds
+  let lastCheck = new Date();
+  const interval = setInterval(async () => {
+    try {
+      const newNotifications = await prisma.notification.findMany({
+        where: { userId: resolvedUserId!, createdAt: { gt: lastCheck } },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (newNotifications.length > 0) {
+        const unreadCount = await prisma.notification.count({ where: { userId: resolvedUserId!, isRead: false } });
+        sendEvent('new_notifications', { notifications: newNotifications, unreadCount });
+      }
+      lastCheck = new Date();
+    } catch { /* ignore */ }
+  }, 10000);
+
+  // Keepalive
+  const keepalive = setInterval(() => {
+    res.write(':keepalive\n\n');
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(interval);
+    clearInterval(keepalive);
+  });
+}
+
 export default {
   getFavorites,
   addFavorite,
@@ -542,4 +624,5 @@ export default {
   getNotifications,
   markNotificationRead,
   markAllNotificationsRead,
+  getNotificationsStream,
 };

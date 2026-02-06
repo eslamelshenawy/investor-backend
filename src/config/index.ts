@@ -56,6 +56,12 @@ export const config = {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
   },
 
+  // Moyasar Payment Gateway
+  moyasar: {
+    publishableKey: process.env.MOYASAR_PUBLISHABLE_KEY || '',
+    secretKey: process.env.MOYASAR_SECRET_KEY || '',
+  },
+
   // Rate limiting
   rateLimit: {
     windowMs: 15 * 60 * 1000, // 15 minutes

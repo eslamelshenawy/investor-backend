@@ -14,6 +14,7 @@ import {
   getNotifications,
   markNotificationRead,
   markAllNotificationsRead,
+  getNotificationsStream,
 } from '../controllers/user.controller.js';
 
 const router = Router();
@@ -37,7 +38,8 @@ router.delete('/dashboards/:id', deleteDashboard);
 
 // Notifications
 router.get('/notifications', getNotifications);
-router.put('/notifications/:id/read', markNotificationRead);
+router.get('/notifications/stream', getNotificationsStream);
 router.put('/notifications/read-all', markAllNotificationsRead);
+router.put('/notifications/:id/read', markNotificationRead);
 
 export default router;

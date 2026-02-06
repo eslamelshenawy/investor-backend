@@ -43,6 +43,12 @@ model User {
   provider         String?   // google, github, etc.
   providerId       String?   @map("provider_id")
 
+  // Subscription
+  subscriptionPlan   String    @default("FREE") @map("subscription_plan") // FREE, ANALYST, EXPERT
+  subscriptionStatus String    @default("ACTIVE") @map("subscription_status") // ACTIVE, CANCELLED, EXPIRED, PAST_DUE
+  subscriptionEnd    DateTime? @map("subscription_end")
+  trialEndsAt        DateTime? @map("trial_ends_at")
+
   // Relations
   dashboards    Dashboard[]
   favorites     Favorite[]
@@ -54,6 +60,8 @@ model User {
   following     Follow[]       @relation("FollowingUser")
   followers     Follow[]       @relation("FollowedUser")
   passwordResets PasswordResetToken[]
+  subscriptions Subscription[]
+  payments      Payment[]
 
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
@@ -239,6 +247,39 @@ model Dataset {
   verifiedAt          DateTime? @map("verified_at")
   verificationNote    String?   @map("verification_note")
   verificationNoteAr  String?   @map("verification_note_ar")
+
+  // ── المستوى 1: بيانات وصفية تجارية (Business Metadata) ──
+  owner           String?   // المالك / الجهة المسؤولة
+  ownerAr         String?   @map("owner_ar")
+  steward         String?   // المشرف على البيانات
+  stewardAr       String?   @map("steward_ar")
+  businessDomain  String?   @map("business_domain")  // المجال: مالية، عقارات، طاقة...
+  tags            String?   @default("[]")  // JSON array of tags
+  updateFrequency String?   @map("update_frequency")  // DAILY, WEEKLY, MONTHLY, QUARTERLY, YEARLY, ONCE
+  license         String?   // نوع الرخصة
+  language        String?   @default("ar")  // لغة البيانات
+
+  // ── المستوى 2: حوكمة / جودة / مخاطر (Governance & Quality & Risk) ──
+  sensitivityLevel   String?   @default("PUBLIC") @map("sensitivity_level")  // PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED
+  qualityScore       Int?      @map("quality_score")  // 0-100
+  completeness       Int?      // نسبة الاكتمال 0-100
+  accuracy           Int?      // نسبة الدقة 0-100
+  timeliness         Int?      // نسبة الحداثة 0-100
+  consistency        Int?      // نسبة الاتساق 0-100
+  riskLevel          String?   @default("LOW") @map("risk_level")  // LOW, MEDIUM, HIGH, CRITICAL
+  complianceNotes    String?   @map("compliance_notes")  // ملاحظات الامتثال
+  retentionPolicy    String?   @map("retention_policy")  // سياسة الاحتفاظ
+  accessRestrictions String?   @map("access_restrictions")  // قيود الوصول
+  hasPII             Boolean?  @default(false) @map("has_pii")  // يحتوي بيانات شخصية
+
+  // ── المستوى 3: بيانات تقنية (Technical Metadata) ──
+  formatType      String?   @map("format_type")  // CSV, JSON, XML, EXCEL, API
+  encoding        String?   @default("UTF-8")  // ترميز الملف
+  fileSize        String?   @map("file_size")  // حجم الملف
+  dataDictionary  Json?     @map("data_dictionary")  // وصف الأعمدة: [{name, type, description, nullable, sample}]
+  dataLineage     String?   @map("data_lineage")  // أصل البيانات ومسارها
+  apiEndpoint     String?   @map("api_endpoint")  // رابط API للوصول المباشر
+  schemaVersion   String?   @map("schema_version")  // إصدار المخطط
 
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
@@ -459,4 +500,132 @@ model PasswordResetToken {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("password_reset_tokens")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// الاشتراكات - Subscriptions
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Subscription {
+  id              String    @id @default(cuid())
+  userId          String    @map("user_id")
+  plan            String    // FREE, ANALYST, EXPERT
+  status          String    @default("ACTIVE") // ACTIVE, CANCELLED, EXPIRED, PAST_DUE
+  billingCycle    String    @default("MONTHLY") @map("billing_cycle") // MONTHLY, ANNUAL
+  amount          Int       @default(0) // Amount in halalas (SAR x 100)
+  currency        String    @default("SAR")
+  startDate       DateTime  @default(now()) @map("start_date")
+  endDate         DateTime? @map("end_date")
+  cancelledAt     DateTime? @map("cancelled_at")
+  cancelReason    String?   @map("cancel_reason")
+
+  // Relations
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments        Payment[]
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("subscriptions")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// المدفوعات - Payments
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Payment {
+  id              String    @id @default(cuid())
+  userId          String    @map("user_id")
+  subscriptionId  String?   @map("subscription_id")
+  amount          Int       // Amount in halalas (SAR x 100)
+  currency        String    @default("SAR")
+  status          String    @default("PENDING") // PENDING, PAID, FAILED, REFUNDED
+  paymentMethod   String?   @map("payment_method") // creditcard, mada, applepay, stcpay
+  gatewayId       String?   @map("gateway_id") // Moyasar payment ID
+  gatewayResponse String?   @map("gateway_response") // JSON string
+  description     String?
+  descriptionAr   String?   @map("description_ar")
+  invoiceUrl      String?   @map("invoice_url")
+  paidAt          DateTime? @map("paid_at")
+
+  // Relations
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("payments")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// المحادثات - Chat Conversations
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Conversation {
+  id        String        @id @default(cuid())
+  userId    String        @map("user_id")
+  title     String        @default("محادثة جديدة")
+  messages  ChatMessage[]
+
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  @@map("conversations")
+}
+
+model ChatMessage {
+  id             String       @id @default(cuid())
+  conversationId String       @map("conversation_id")
+  role           String       // user, assistant, system
+  content        String
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@map("chat_messages")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// الحملات التفاعلية - Interactive Campaigns
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model Campaign {
+  id            String    @id @default(cuid())
+  title         String
+  titleAr       String    @map("title_ar")
+  description   String?
+  descriptionAr String?   @map("description_ar")
+  type          String    @default("POLL") // POLL, SURVEY, QUIZ, CONTEST
+  status        String    @default("DRAFT") // DRAFT, ACTIVE, PAUSED, ENDED
+  settings      String    @default("{}") // JSON: questions, options, rules
+  coverImage    String?   @map("cover_image")
+  createdBy     String    @map("created_by")
+  startDate     DateTime? @map("start_date")
+  endDate       DateTime? @map("end_date")
+  participantCount Int    @default(0) @map("participant_count")
+
+  responses     CampaignResponse[]
+
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("campaigns")
+}
+
+model CampaignResponse {
+  id          String   @id @default(cuid())
+  campaignId  String   @map("campaign_id")
+  userId      String?  @map("user_id")
+  sessionId   String?  @map("session_id")
+  answers     String   @default("{}") // JSON: answers to questions
+  score       Int?     // For quiz type
+
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([campaignId, userId])
+  @@map("campaign_responses")
 }

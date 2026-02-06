@@ -16,6 +16,9 @@ import exportRoutes from './export.routes.js';
 import uploadRoutes from './upload.routes.js';
 import dashboardTemplateRoutes from './dashboard-template.routes.js';
 import recommendationRoutes from './recommendation.routes.js';
+import subscriptionRoutes from './subscription.routes.js';
+import chatRoutes from './chat.routes.js';
+import campaignRoutes from './campaign.routes.js';
 import { getHeatmapData, getHeatmapStream } from '../controllers/heatmap.controller.js';
 
 const router = Router();
@@ -47,6 +50,9 @@ router.use('/export', exportRoutes);
 router.use('/uploads', uploadRoutes);
 router.use('/dashboard-templates', dashboardTemplateRoutes);
 router.use('/recommendations', recommendationRoutes);
+router.use('/subscriptions', subscriptionRoutes);
+router.use('/chat', chatRoutes);
+router.use('/campaigns', campaignRoutes);
 router.get('/heatmap', getHeatmapData);
 router.get('/heatmap/stream', getHeatmapStream);
 

@@ -13,6 +13,9 @@ import {
   getUnverifiedDatasets,
   getVerificationStats,
   verifyDataset,
+  getDatasetMetadata,
+  updateDatasetMetadata,
+  getMetadataStats,
 } from '../controllers/dataset.controller.js';
 
 const router = Router();
@@ -102,6 +105,13 @@ router.get('/:id/preview', getDatasetPreviewData);
 // ═══════════════════════════════════════════════════════════════════
 
 /**
+ * @route   GET /api/datasets/metadata/stats
+ * @desc    إحصائيات اكتمال البيانات الوصفية
+ * @access  Expert+
+ */
+router.get('/metadata/stats', authenticate, requireRole('EXPERT', 'ADMIN', 'SUPER_ADMIN'), getMetadataStats);
+
+/**
  * @route   POST /api/datasets/:id/refresh
  * @desc    تحديث الـ Cache وإعادة جلب البيانات
  * @access  Admin
@@ -114,5 +124,19 @@ router.post('/:id/refresh', authenticate, requireRole('ADMIN'), refreshDatasetCa
  * @access  Expert+
  */
 router.patch('/:id/verify', authenticate, requireRole('EXPERT', 'ADMIN', 'SUPER_ADMIN'), verifyDataset);
+
+/**
+ * @route   GET /api/datasets/:id/metadata
+ * @desc    البيانات الوصفية الكاملة (3 مستويات) لمجموعة بيانات
+ * @access  Public
+ */
+router.get('/:id/metadata', getDatasetMetadata);
+
+/**
+ * @route   PUT /api/datasets/:id/metadata
+ * @desc    تحديث البيانات الوصفية (3 مستويات)
+ * @access  Expert+
+ */
+router.put('/:id/metadata', authenticate, requireRole('EXPERT', 'ADMIN', 'SUPER_ADMIN'), updateDatasetMetadata);
 
 export default router;

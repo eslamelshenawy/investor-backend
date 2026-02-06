@@ -92,9 +92,9 @@ router.get('/:id/engagement', optionalAuth, getEngagement);
 // ═══════════════════════════════════════════════════════════
 router.get('/:id/comments', getComments);
 router.get('/:id/comments/stream', getCommentsStream);
-router.post('/:id/comments', authenticate, createComment);
-router.put('/:id/comments/:cid', authenticate, updateComment);
-router.delete('/:id/comments/:cid', authenticate, deleteComment);
+router.post('/:id/comments', authenticate, requireRole('ANALYST', 'EXPERT', 'WRITER', 'DESIGNER', 'EDITOR', 'CONTENT_MANAGER', 'ADMIN', 'SUPER_ADMIN'), createComment);
+router.put('/:id/comments/:cid', authenticate, requireRole('ANALYST', 'EXPERT', 'WRITER', 'DESIGNER', 'EDITOR', 'CONTENT_MANAGER', 'ADMIN', 'SUPER_ADMIN'), updateComment);
+router.delete('/:id/comments/:cid', authenticate, requireRole('ANALYST', 'EXPERT', 'WRITER', 'DESIGNER', 'EDITOR', 'CONTENT_MANAGER', 'ADMIN', 'SUPER_ADMIN'), deleteComment);
 
 // ═══════════════════════════════════════════════════════════
 // Single content (must be after specific routes)

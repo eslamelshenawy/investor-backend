@@ -904,8 +904,15 @@ export async function likeContent(
       ]);
       const updated = await prisma.content.findUnique({
         where: { id: contentId },
-        select: { likeCount: true },
+        select: { likeCount: true, authorId: true, titleAr: true, title: true },
       });
+      // Send notification to content author
+      if (userId && updated?.authorId && updated.authorId !== userId) {
+        import('../utils/notify.js').then(({ notifyNewLike }) => {
+          const liker = (req as any).user;
+          notifyNewLike(updated.authorId, liker?.nameAr || liker?.name || 'مستخدم', updated.titleAr || updated.title || '', contentId).catch(() => {});
+        });
+      }
       sendSuccess(res, { liked: true, likeCount: updated?.likeCount || 0, contentId });
     }
   } catch (error) {
