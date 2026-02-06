@@ -38,7 +38,101 @@ export async function getFavorites(
       prisma.favorite.count({ where }),
     ]);
 
-    sendPaginated(res, favorites, pageNum, limitNum, total);
+    // Enrich favorites with actual item data
+    const enriched = await Promise.all(
+      favorites.map(async (fav) => {
+        let itemTitle = '';
+        let itemTitleAr = '';
+        let itemDescription = '';
+        let itemImage = '';
+        let category = '';
+        let source = '';
+        let trend = '';
+        let impactScore = 0;
+        let viewCount = 0;
+        let recordCount = 0;
+
+        try {
+          switch (fav.itemType.toUpperCase()) {
+            case 'DATASET': {
+              const dataset = await prisma.dataset.findUnique({
+                where: { id: fav.itemId },
+                select: { name: true, nameAr: true, description: true, descriptionAr: true, category: true, source: true, recordCount: true },
+              });
+              if (dataset) {
+                itemTitle = dataset.name || '';
+                itemTitleAr = dataset.nameAr || '';
+                itemDescription = dataset.descriptionAr || dataset.description || '';
+                category = dataset.category || '';
+                source = dataset.source || '';
+                recordCount = dataset.recordCount || 0;
+              }
+              break;
+            }
+            case 'SIGNAL': {
+              const signal = await prisma.signal.findUnique({
+                where: { id: fav.itemId },
+                select: { title: true, titleAr: true, summary: true, summaryAr: true, trend: true, impactScore: true },
+              });
+              if (signal) {
+                itemTitle = signal.title || '';
+                itemTitleAr = signal.titleAr || '';
+                itemDescription = signal.summaryAr || signal.summary || '';
+                trend = signal.trend || '';
+                impactScore = signal.impactScore || 0;
+              }
+              break;
+            }
+            case 'ARTICLE':
+            case 'CONTENT': {
+              const content = await prisma.content.findUnique({
+                where: { id: fav.itemId },
+                select: { title: true, titleAr: true, excerpt: true, excerptAr: true, featuredImage: true, viewCount: true, type: true },
+              });
+              if (content) {
+                itemTitle = content.title || '';
+                itemTitleAr = content.titleAr || '';
+                itemDescription = content.excerptAr || content.excerpt || '';
+                itemImage = content.featuredImage || '';
+                viewCount = content.viewCount || 0;
+                category = content.type || '';
+              }
+              break;
+            }
+            case 'DASHBOARD': {
+              const dashboard = await prisma.dashboard.findUnique({
+                where: { id: fav.itemId },
+                select: { name: true, nameAr: true, description: true },
+              });
+              if (dashboard) {
+                itemTitle = dashboard.name || '';
+                itemTitleAr = dashboard.nameAr || '';
+                itemDescription = dashboard.description || '';
+              }
+              break;
+            }
+          }
+        } catch {
+          // Item may have been deleted - that's ok
+        }
+
+        return {
+          ...fav,
+          itemTitle,
+          itemTitleAr,
+          itemDescription,
+          itemImage,
+          category,
+          source,
+          trend,
+          impactScore,
+          viewCount,
+          recordCount,
+        };
+      })
+    );
+
+    sendPaginated(res, enriched, pageNum, limitNum, total);
   } catch (error) {
     next(error);
   }
