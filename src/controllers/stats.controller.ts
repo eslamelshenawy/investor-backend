@@ -431,5 +431,71 @@ export const getSourceStats = async (_req: Request, res: Response) => {
   }
 };
 
-// Remove market pulse - we don't have real market data API
-// If you want market data, you need to subscribe to Tadawul API or similar service
+/**
+ * SSE Stream for data sources stats (WebFlux-style)
+ */
+export const getSourcesStream = async (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const sendEvent = (event: string, data: any) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    // Get dataset counts by source
+    const sourcesRaw = await prisma.dataset.groupBy({
+      by: ['source'],
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: 20
+    });
+    const sources = sourcesRaw.filter(s => s.source !== null);
+
+    const totalDatasets = sources.reduce((sum, s) => sum + s._count.id, 0);
+
+    // Send metadata first
+    sendEvent('meta', {
+      totalSources: sources.length,
+      totalDatasets,
+      lastUpdated: new Date().toISOString(),
+      isRealData: true
+    });
+
+    // Stream each source one by one
+    for (let i = 0; i < sources.length; i++) {
+      sendEvent('source', {
+        name: sources[i].source,
+        count: sources[i]._count.id,
+        percentage: totalDatasets > 0 ? Math.round((sources[i]._count.id / totalDatasets) * 100) : 0,
+        index: i
+      });
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+
+    // Get overview stats for additional context
+    const [totalCategories, totalSignals, totalUsers] = await Promise.all([
+      prisma.dataset.groupBy({ by: ['category'] }).then(c => c.filter(x => x.category !== null).length),
+      prisma.signal.count({ where: { isActive: true } }),
+      prisma.user.count()
+    ]);
+
+    sendEvent('overview', {
+      totalCategories,
+      totalSignals,
+      totalUsers,
+      totalDatasets
+    });
+
+    sendEvent('complete', { count: sources.length });
+    res.end();
+  } catch (error) {
+    logger.error('Error streaming sources:', error);
+    sendEvent('error', { message: 'فشل في جلب مصادر البيانات' });
+    res.end();
+  }
+};

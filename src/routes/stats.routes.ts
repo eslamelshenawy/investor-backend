@@ -5,7 +5,8 @@ import {
   getRecentActivity,
   getUserStats,
   getCategoryStats,
-  getSourceStats
+  getSourceStats,
+  getSourcesStream
 } from '../controllers/stats.controller.js';
 import { authenticate } from '../middleware/auth.js';
 
@@ -45,6 +46,13 @@ router.get('/categories', getCategoryStats);
  * @access  Public
  */
 router.get('/sources', getSourceStats);
+
+/**
+ * @route   GET /api/stats/sources/stream
+ * @desc    SSE stream for data sources stats (WebFlux-style)
+ * @access  Public
+ */
+router.get('/sources/stream', getSourcesStream);
 
 /**
  * @route   GET /api/stats/user
